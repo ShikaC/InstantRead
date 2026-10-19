@@ -54,6 +54,16 @@ debug APK 输出到（相对仓库根目录）：
 apps/android-instantread/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 安装
+
+当前尚未提供签名安装包，也没有上架任何应用商店。首发将通过 GitHub Releases 提供签名 APK、校验值与安装说明；在 Release 出现之前，请按上一节自行构建 debug APK。
+
+## 反馈与安全
+
+- 缺陷与使用问题请开 Issue，模板会询问版本、导入来源与复现步骤。
+- 安全问题请走私密漏洞报告，不要开公开 Issue，见 [安全说明](SECURITY.md)。
+- 数据处理方式见 [隐私说明](PRIVACY.md)。
+
 ## 范围边界
 
 即阅专注于 HTML、Markdown、TXT 和 ZIP 网页包的本地阅读，不是通用文件管理器、浏览器或编辑器；当前不包含 PDF / Office 内置预览、账号、云同步和多设备同步。

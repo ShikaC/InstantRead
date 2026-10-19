@@ -1,0 +1,72 @@
+name: 缺陷报告
+description: 报告可复现的问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        安全问题请不要开公开 Issue，改用仓库 Security 页签的私密漏洞报告，见 SECURITY.md。
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 在首页或设置页可以看到版本号。
+      placeholder: 例如 0.1.0-rc1
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: 文件类型
+      options:
+        - HTML
+        - Markdown
+        - TXT
+        - ZIP 网页包
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: 导入来源
+      description: 从哪个入口导入的，例如 App 内选择、系统文件管理器、分享、浏览器下载。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 导入……
+        3. 看到……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 有错误提示请原样贴出；闪退请说明是否能稳定复现。
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备与系统
+      placeholder: 例如 Android 16 / 某型号
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: 样例文件
+      description: 能提供最小复现文件最好；请先脱敏，不要上传含隐私的原文件。
+    validations:
+      required: false

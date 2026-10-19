@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题
+    url: https://github.com/ShikaC/InstantRead/security/advisories/new
+    about: 请用私密漏洞报告，不要开公开 Issue。
+  - name: 使用说明与限制
+    url: https://github.com/ShikaC/InstantRead/blob/main/README.md
+    about: 先看 README 的构建、范围边界与隐私说明。
