@@ -28,6 +28,17 @@ Apache License 2.0 全文见 https://www.apache.org/licenses/LICENSE-2.0 。
 
 ## 素材
 
-应用图标与首页图标由本项目自绘或生成，未使用第三方图标库。仓库中的演示视频
-位于不参与分发的 `showcase/` 目录，其脚本依赖 GreenSock GSAP 3.14.2
-（GreenSock 标准免费许可，非 OSI 许可），相关说明见该目录内的 notice 文件。
+本项目未引入第三方图标库、字体或音频素材。逐项来源如下：
+
+| 素材 | 位置 | 来源 |
+| --- | --- | --- |
+| 应用图标源文件 | `docs/artifacts/app-icon-a3-source.png` | 项目维护者用 OpenAI 图像模型（gpt-image）生成；文件内嵌 C2PA 声明 `softwareAgent: gpt-image 2.0`、`digitalSourceType: trainedAlgorithmicMedia` |
+| 应用图标成品与启动图标 | `docs/artifacts/app-icon-a3-padded-84.png`、`apps/android-instantread/app/src/main/res/mipmap-*/ic_launcher*.png` | 由上述源文件缩放、加内边距导出，未再引入其他素材 |
+| 首页月亮与设置图标 | 代码内 Android Canvas 自绘 | 项目自绘，非第三方图标库 |
+| 首页图标对照图 | `docs/artifacts/home-icons-aligned-moon-gear.png` | 项目自绘视图的渲染截图 |
+| 验证样例 | `docs/validation/android-instantread/samples/**` | 项目自建测试夹具，内含的 PNG 为脚本生成的极小色块 |
+| 字体 | 无 | 未打包任何自定义字体 |
+
+演示视频位于不参与分发的 `showcase/` 目录，其脚本依赖 GreenSock GSAP 3.14.2
+（GreenSock 标准免费许可，非 OSI 许可），相关说明见该目录内的 notice 文件；
+该目录与视频、音频都不进入公开仓库。
