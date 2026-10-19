@@ -1,0 +1,47 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+local.properties
+
+# Local release signing material
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Android Studio
+.idea/
+*.iml
+
+# Generated packages
+*.apk
+*.aab
+
+# Kotlin / Java
+*.class
+
+# Python
+__pycache__/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local scratch
+.scratch/
+tmp/
+temp/
+.worktrees/
+
+# HyperFrames local video workspace
+showcase/instantread-video/node_modules/
+showcase/instantread-video/.hyperframes/
+showcase/instantread-video/.tmp/
+showcase/instantread-video/renders/
+showcase/instantread-video/snapshots/
+showcase/instantread-video/portrait/assets/
+showcase/instantread-video/portrait/.hyperframes/
+showcase/instantread-video/portrait/renders/
+showcase/instantread-video/portrait/snapshots/
