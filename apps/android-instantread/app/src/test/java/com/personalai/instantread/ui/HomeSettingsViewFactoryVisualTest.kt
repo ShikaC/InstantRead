@@ -1,5 +1,7 @@
 package com.personalai.instantread.ui
 
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
 import android.view.View
@@ -19,7 +21,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlertDialog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -36,12 +40,12 @@ class HomeSettingsViewFactoryVisualTest {
         val text = view.visibleText().joinToString("\n")
 
         assertTrue(text.contains("即阅"))
-        assertTrue(text.contains("LOCAL PREVIEW"))
+        assertTrue(text.contains("本地预览"))
         assertFalse(text.contains("☾"))
         assertFalse(text.contains("⚙"))
         assertTrue(text.contains("+  选择本地文件"))
-        assertTrue(text.contains("PRIVACY PROTECTED"))
-        assertTrue(text.contains("文件仅在本地解析"))
+        assertTrue(text.contains("仅在本机解析"))
+        assertTrue(text.contains("不上传 · 无网络权限"))
         assertTrue(text.contains("最近记录"))
         assertTrue(text.contains("全部"))
         assertTrue(text.contains("收藏"))
@@ -65,7 +69,7 @@ class HomeSettingsViewFactoryVisualTest {
         assertEquals("夜间模式", view.singleViewWithTag("home-theme-button").contentDescription)
         assertHeightDp(59, view.singleViewWithTag("home-app-bar"))
         assertHeightDp(52, view.singleViewWithTag("home-primary-action"))
-        assertHeightDp(21, view.singleViewWithTag("home-privacy-row"))
+        assertHeightDp(26, view.singleViewWithTag("home-privacy-row"))
         assertEquals(1, view.viewsWithTag("home-recent-list").size)
         assertEquals(1, view.viewsWithTag("home-theme-button").size)
         assertEquals(1, view.viewsWithTag("home-settings-button").size)
@@ -78,9 +82,9 @@ class HomeSettingsViewFactoryVisualTest {
         }
         assertEquals(1, view.viewsWithTag("recent-warning-badge").size)
         assertTextSizeSp(20f, view.textViewWithText("即阅"))
-        assertTextSizeSp(8f, view.textViewWithText("LOCAL PREVIEW"))
+        assertTextSizeSp(10.5f, view.textViewWithText("本地预览"))
         assertTextSizeSp(15f, view.textViewWithText("+  选择本地文件"))
-        assertTextSizeSp(8f, view.textViewWithText("⊙  PRIVACY PROTECTED"))
+        assertTextSizeSp(11.5f, view.textViewWithText("仅在本机解析"))
         assertTextSizeSp(12f, view.textViewWithText("最近记录"))
         assertEquals(1, view.viewsWithTag("home-filter-all").size)
         assertEquals(1, view.viewsWithTag("home-filter-favorites").size)
@@ -207,6 +211,75 @@ class HomeSettingsViewFactoryVisualTest {
         assertEquals("收藏 1", favorites.text.toString())
         assertEquals("显示全部最近文件，5 个", all.contentDescription)
         assertEquals("显示收藏文件，1 个", favorites.contentDescription)
+    }
+
+    @Test
+    fun homeShowsClearHistoryButtonOnlyWhenUnfavoritedRecordsExist() {
+        val cleared = mutableListOf<String>()
+        val actions = HomeActions(
+            onChooseFile = {},
+            onOpenSettings = {},
+            onClearCache = {},
+            onOpenHistory = {},
+            onToggleFavorite = {},
+            onDeleteHistory = {},
+            onClearHistory = { cleared += "clear" }
+        )
+        val withClearable = HomeViewFactory(RuntimeEnvironment.getApplication()).create(
+            message = null,
+            recentFiles = figmaRecentFiles(),
+            isDarkTheme = false,
+            clearableRecentCount = 4,
+            actions = actions
+        )
+        val withoutClearable = HomeViewFactory(RuntimeEnvironment.getApplication()).create(
+            message = null,
+            recentFiles = figmaRecentFiles(),
+            isDarkTheme = false,
+            clearableRecentCount = 0,
+            actions = actions
+        )
+
+        assertEquals(1, withClearable.viewsWithTag("home-clear-history-button").size)
+        assertEquals(0, withoutClearable.viewsWithTag("home-clear-history-button").size)
+        assertEquals(
+            "清空 4 条未收藏记录，收藏会保留",
+            withClearable.singleViewWithTag("home-clear-history-button").contentDescription
+        )
+        withClearable.singleViewWithTag("home-clear-history-button").performClick()
+        assertEquals(listOf("clear"), cleared)
+    }
+
+    @Test
+    fun homeClearHistorySheetExplainsFavoritesAndOriginalFilesSurvive() {
+        val confirmations = mutableListOf<String>()
+        val view = HomeViewFactory(RuntimeEnvironment.getApplication()).create(
+            message = null,
+            recentFiles = figmaRecentFiles(),
+            isDarkTheme = false,
+            clearableRecentCount = 4,
+            actions = HomeActions(
+                onChooseFile = {},
+                onOpenSettings = {},
+                onClearCache = {},
+                onOpenHistory = {},
+                onToggleFavorite = {},
+                onDeleteHistory = {},
+                onClearHistory = { confirmations += "clear" },
+                onCancelClearHistory = { confirmations += "cancel" }
+            ),
+            pendingClearHistory = true
+        )
+
+        val sheet = view.singleViewWithTag("home-clear-sheet")
+        val sheetText = sheet.visibleText().joinToString("\n")
+
+        assertTrue(sheetText.contains("清空未收藏的记录？"))
+        assertTrue(sheetText.contains("已收藏的文件和手机里的原始文件不会被删除"))
+        assertEquals(0, view.viewsWithTag("home-delete-sheet").size)
+        (sheet.viewsWithTag("home-clear-cancel").single() as Button).performClick()
+        (sheet.viewsWithTag("home-clear-confirm").single() as Button).performClick()
+        assertEquals(listOf("cancel", "clear"), confirmations)
     }
 
     @Test
@@ -371,29 +444,31 @@ class HomeSettingsViewFactoryVisualTest {
     }
 
     @Test
-    fun homeThemeButtonUsesCleanCrescentWithoutAccentDot() {
+    fun homeThemeButtonUsesPrototypeVectorIcons() {
         val source = File("src/main/java/com/personalai/instantread/ui/HomeViewFactory.kt").readText()
         val themeButtonSource = source
             .substringAfter("private fun createThemeButton")
             .substringBefore("private fun createSettingsButton")
+        val moonVector = File("src/main/res/drawable/ic_instantread_moon.xml").readText()
+        val sunVector = File("src/main/res/drawable/ic_instantread_sun.xml").readText()
 
         assertTrue(source.contains("tag = \"home-theme-button\""))
-        assertFalse(
-            "Moon icon should follow the reference image as a clean crescent, without the previous decorative dot.",
-            themeButtonSource.contains("dotRadius") || themeButtonSource.contains("private val dot = Paint")
+        assertTrue(
+            "Theme button should use the shared prototype moon and sun vectors.",
+            themeButtonSource.contains("InstantIcons.Sun") &&
+                themeButtonSource.contains("InstantIcons.Moon")
         )
         assertFalse(
-            "Moon icon should be drawn as filled negative space, not stitched together from arc segments.",
-            themeButtonSource.contains("addArc(") || themeButtonSource.contains("drawPath(crescent")
+            "Theme icon should not fall back to a page-local Canvas approximation.",
+            themeButtonSource.contains("moonCutout") || themeButtonSource.contains("drawSunIcon")
         )
         assertTrue(
-            "Moon icon should use a cutout circle to form a recognizable crescent.",
-            themeButtonSource.contains("moonCutout")
+            "Moon path should match the interface prototype exactly.",
+            moonVector.contains("M15.2 11.4A6.5 6.5 0 0 1 6.6 2.8a6.5 6.5 0 1 0 8.6 8.6Z")
         )
         assertTrue(
-            "Moon crescent should be wide enough to read as a moon at toolbar size.",
-            themeButtonSource.contains("moonRadius * 0.42f") &&
-                themeButtonSource.contains("moonRadius * 0.84f")
+            "Sun rays should match the interface prototype exactly.",
+            sunVector.contains("M9 1.6v1.8M9 14.6v1.8M16.4 9h-1.8M3.4 9H1.6")
         )
     }
 
@@ -421,8 +496,7 @@ class HomeSettingsViewFactoryVisualTest {
 
         assertEquals("日间模式", view.singleViewWithTag("home-theme-button").contentDescription)
         assertNotNull("Dark home should keep an intentional page background.", view.background)
-        assertTrue(themeButtonSource.contains("drawSunIcon"))
-        assertTrue(themeButtonSource.contains("COLOR_SUN_ICON"))
+        assertTrue(themeButtonSource.contains("InstantIcons.Sun"))
 
         view.singleViewWithTag("home-theme-button").performClick()
 
@@ -434,78 +508,59 @@ class HomeSettingsViewFactoryVisualTest {
         val source = File("src/main/java/com/personalai/instantread/ui/HomeViewFactory.kt").readText()
         val settingsButtonSource = source
             .substringAfter("private fun createSettingsButton")
-            .substringBefore("private fun iconButton")
+            .substringBefore("private fun sheetButton")
+        val gearVector = File("src/main/res/drawable/ic_instantread_gear.xml").readText()
 
         assertTrue(source.contains("tag = \"home-settings-button\""))
         assertFalse(
-            "Settings icon should not use radial drawLine teeth because it reads like a sun.",
-            settingsButtonSource.contains("drawLine(")
+            "Settings icon should not use a page-local radial tooth approximation.",
+            settingsButtonSource.contains("drawLine(") ||
+                settingsButtonSource.contains("val outer = size * 0.19f")
         )
         assertTrue(
-            "Settings icon should use a light stroked gear outline path.",
-            settingsButtonSource.contains("gearPath") &&
-                settingsButtonSource.contains("canvas.drawPath(gearPath, gearStroke)")
+            "Settings button should use the shared prototype gear vector.",
+            settingsButtonSource.contains("InstantIcons.Gear")
         )
         assertTrue(
-            "Settings icon should keep a center cutout so it reads as a gear.",
-            settingsButtonSource.contains("canvas.drawCircle(centerX, centerY, size * 0.075f, gearStroke)")
-        )
-        assertTrue(
-            "Settings icon should share the moon icon visual bounds instead of looking taller or wider.",
-            settingsButtonSource.contains("val outer = size * 0.19f") &&
-                settingsButtonSource.contains("val shoulder = size * 0.145f")
+            "Gear vector should keep the prototype center circle and outline path.",
+            gearVector.contains("M8.9 12a3.1 3.1 0 1 0 6.2 0a3.1 3.1 0 1 0-6.2 0") &&
+                gearVector.contains("M19.4 15a1.65 1.65 0 0 0 .33 1.82")
         )
     }
 
     @Test
-    fun homeRecentActionsUseReferenceStyleSelfDrawnIcons() {
+    fun homeRecentActionsUsePrototypeVectorPaths() {
         val source = File("src/main/java/com/personalai/instantread/ui/HomeViewFactory.kt").readText()
-        val rowSource = source
-            .substringAfter("private fun createRecentRow")
-            .substringBefore("private fun fileIconView")
         val favoriteButtonSource = source
             .substringAfter("private fun favoriteIconButton")
             .substringBefore("private fun deleteIconButton")
         val deleteButtonSource = source
             .substringAfter("private fun deleteIconButton")
             .substringBefore("private fun createDeleteSheet")
+        val starVector = File("src/main/res/drawable/ic_instantread_star_outline.xml").readText()
+        val filledStarVector = File("src/main/res/drawable/ic_instantread_star_filled.xml").readText()
+        val trashVector = File("src/main/res/drawable/ic_instantread_trash.xml").readText()
 
-        assertFalse(
-            "Recent rows should not render favorite state with system text glyphs.",
-            rowSource.contains("\"★\"") || rowSource.contains("\"☆\"")
-        )
         assertTrue(
-            "Favorite action should be a custom drawn outlined star.",
+            "Favorite action should reuse the shared prototype star vector and active fill.",
             favoriteButtonSource.contains("tag = \"recent-favorite-button\"") &&
-                favoriteButtonSource.contains("starPath") &&
-                favoriteButtonSource.contains("canvas.drawPath(starPath, starStroke)") &&
-                favoriteButtonSource.contains("val centerY = height / 2f")
+                favoriteButtonSource.contains("InstantIcons.Star") &&
+                favoriteButtonSource.contains("activeTint = theme.favoriteOn")
         )
         assertTrue(
-            "Delete action should be a custom drawn bright outline trash can.",
+            "Delete action should reuse the shared prototype trash vector and press color.",
             deleteButtonSource.contains("tag = \"recent-delete-button\"") &&
-                deleteButtonSource.contains("trashStroke") &&
-                deleteButtonSource.contains("val iconCenterY = height / 2f") &&
-                deleteButtonSource.contains("bodyWidth = dpFloat(10.8f)") &&
-                deleteButtonSource.contains("bodyHeight = dpFloat(14f)") &&
-                deleteButtonSource.contains("totalHeight = bodyHeight + dpFloat(3f)") &&
-                deleteButtonSource.contains("val lidY = top") &&
-                deleteButtonSource.contains("handleTop = lidY - dpFloat(3f)") &&
-                deleteButtonSource.contains("canvas.drawRoundRect")
+                deleteButtonSource.contains("InstantIcons.Trash") &&
+                deleteButtonSource.contains("pressedTint = theme.deleteIcon")
         )
         assertTrue(
-            "Recent action icon colors should match the reference image family.",
-            source.contains("COLOR_FAVORITE_ICON") &&
-                source.contains("COLOR_DELETE_ICON")
-        )
-        assertFalse(
-            "Favorited star should be solid in the same color as the outline, not semi-transparent.",
-            favoriteButtonSource.contains("alpha = if (item.isFavorite) 54")
+            "Star and trash paths should match the interface prototype exactly.",
+            starVector.contains("M9 2.6l1.9 4 4.4.6-3.2 3 .8 4.3L9 12.5l-3.9 2 .8-4.3-3.2-3 4.4-.6L9 2.6Z") &&
+                trashVector.contains("M3.2 4.6h11.6M7 4.6V3.1h4v1.5M5.2 4.6l.7 10.3h6.2l.7-10.3")
         )
         assertTrue(
-            "Favorited star should fill with the same color family as its outline.",
-            favoriteButtonSource.contains("canvas.drawPath(starPath, starFill)") &&
-                favoriteButtonSource.contains("starFill.alpha = if (item.isFavorite) 255 else 0")
+            "Favorited star should use a filled vector rather than a semi-transparent approximation.",
+            filledStarVector.contains("android:fillColor=\"#000000\"")
         )
     }
 
@@ -549,6 +604,47 @@ class HomeSettingsViewFactoryVisualTest {
     }
 
     @Test
+    fun homeSheetButtonsAvoidPlatformShadow() {
+        val pendingDelete = RecentFileItem(
+            id = "zip-1",
+            title = "sample-site.zip",
+            fileTypeLabel = "ZIP",
+            isFavorite = false,
+            warningLabel = null
+        )
+        val deleteSheet = HomeViewFactory(RuntimeEnvironment.getApplication()).create(
+            message = null,
+            recentFiles = listOf(pendingDelete),
+            isDarkTheme = false,
+            actions = emptyHomeActions(),
+            pendingDeleteFile = pendingDelete
+        )
+        val clearSheet = HomeViewFactory(RuntimeEnvironment.getApplication()).create(
+            message = null,
+            recentFiles = listOf(pendingDelete),
+            isDarkTheme = false,
+            clearableRecentCount = 1,
+            actions = emptyHomeActions(),
+            pendingClearHistory = true
+        )
+        val sheetButtons = listOf(
+            deleteSheet.buttonWithText("取消"),
+            deleteSheet.buttonWithText("删除"),
+            clearSheet.singleViewWithTag("home-clear-cancel") as Button,
+            clearSheet.singleViewWithTag("home-clear-confirm") as Button
+        )
+
+        sheetButtons.forEach { button ->
+            assertNull(
+                "确认抽屉按钮使用自定义圆角背景，不应保留会在抽屉边缘被裁切的平台阴影动画。",
+                button.stateListAnimator
+            )
+            assertEquals(0f, button.elevation, 0f)
+            assertEquals(0f, button.translationZ, 0f)
+        }
+    }
+
+    @Test
     fun settingsMatchesReferenceCompactGroupedLayout() {
         val view = SettingsViewFactory(RuntimeEnvironment.getApplication()).create(
             state = SettingsViewState(
@@ -564,25 +660,24 @@ class HomeSettingsViewFactoryVisualTest {
         assertTrue(text.contains("JAVASCRIPT 设置"))
         assertTrue(text.contains("JavaScript"))
         assertTrue(text.contains("按文档授权"))
-        assertTrue(text.contains("HTML 与 ZIP 网页包中的脚本默认不执行。"))
-        assertTrue(text.contains("在预览页点击“JS 已禁用”可为当前文档单独允许脚本，只对这一次导入的副本生效。"))
-        assertTrue(text.contains("Markdown 与 TXT 预览不受影响。"))
+        assertFalse(text.contains("HTML 与 ZIP 网页包中的脚本默认不执行。"))
         assertTrue(text.contains("ZIP 解包缓存"))
-        assertTrue(text.contains("阅读设置"))
+        assertTrue(text.contains("阅读显示"))
         assertTrue(text.contains("正文显示"))
-        assertTrue(text.contains("在 Markdown 或 TXT 文件右上角点击 Aa 调整字号、字距、行距和段距。"))
+        assertTrue(text.contains("在 Markdown 或 TXT 文件右上角点击 Aa"))
+        assertTrue(text.contains("调整会全局保存"))
+        assertFalse(text.contains("阅读设置"))
         assertFalse(text.contains("紧凑"))
         assertFalse(text.contains("标准"))
         assertFalse(text.contains("舒适"))
         assertTrue(text.contains("当前缓存"))
         assertTrue(text.contains("可用"))
         assertTrue(text.contains("清理 ZIP 缓存"))
-        assertTrue(text.contains("清理只删除已解包资源，最近记录、收藏和导入源文件都会保留。"))
-        assertTrue(text.contains("外部链接"))
-        assertTrue(text.contains("外部链接将交给系统浏览器打开，App 内不会直接跳转到外部网页。"))
-        assertTrue(text.contains("本地隐私"))
+        assertFalse(text.contains("清理只删除已解包资源"))
+        assertTrue(text.contains("隐私与安全"))
         assertTrue(text.contains("文件仅在本机处理，不上传到云端。"))
         assertTrue(text.contains("最近记录和收藏保存在本机。"))
+        assertTrue(text.contains("外部链接将交给系统浏览器打开"))
         assertFalse(text.contains("↗"))
         assertFalse(text.contains("盾"))
         assertFalse(text.contains("锁"))
@@ -601,17 +696,74 @@ class HomeSettingsViewFactoryVisualTest {
         assertEquals(1, view.viewsWithTag("settings-app-bar").size)
         assertHeightDp(49, view.singleViewWithTag("settings-app-bar"))
         assertEquals(0, view.viewsWithTag("settings-status-summary").size)
-        assertEquals(5, view.viewsWithTag("settings-section-header").size)
-        assertEquals(5, view.viewsWithTag("settings-section-block").size)
+        assertEquals(4, view.viewsWithTag("settings-section-header").size)
+        assertEquals(4, view.viewsWithTag("settings-section-block").size)
         assertEquals(0, view.viewsWithTag("settings-reading-compact").size)
         assertEquals(0, view.viewsWithTag("settings-reading-standard").size)
         assertEquals(0, view.viewsWithTag("settings-reading-comfortable").size)
         assertEquals(3, view.viewsWithTag("settings-info-row").size)
         assertEquals(3, view.viewsWithTag("settings-info-icon").size)
-        assertEquals(1, view.viewsWithTag("settings-note-card").size)
+        assertEquals(0, view.viewsWithTag("settings-note-card").size)
+        assertEquals(2, view.viewsWithTag("settings-primary-row").size)
+        assertEquals(1, view.viewsWithTag("settings-help-javascript").size)
+        assertEquals(0, view.viewsWithTag("settings-help-reading").size)
+        assertEquals(1, view.viewsWithTag("settings-help-cache").size)
+        assertEquals(0, view.viewsWithTag("settings-help-privacy").size)
         assertEquals(1, view.viewsWithTag("settings-clear-cache-button").size)
         assertEquals(1, view.viewsWithTag("settings-page-footer").size)
         assertNotNull("Settings should use an intentional page background.", view.background)
+    }
+
+    @Test
+    fun settingsDarkThemeUsesDarkPageAndSurfaceColors() {
+        val view = SettingsViewFactory(RuntimeEnvironment.getApplication()).create(
+            state = SettingsViewState(
+                message = "已保存设置。",
+                zipCacheSummary = "ZIP 解包缓存：2 个目录，3 个文件，128 B",
+                isDarkTheme = true
+            ),
+            actions = emptySettingsActions()
+        )
+
+        assertEquals(
+            Color.rgb(12, 12, 14),
+            (view.background as ColorDrawable).color
+        )
+        assertEquals(
+            Color.rgb(28, 28, 29),
+            (view.singleViewWithTag("settings-app-bar").background as ColorDrawable).color
+        )
+        assertTrue(
+            view.viewsWithTag("settings-section-block").all { section ->
+                (section.background as ColorDrawable).color == Color.rgb(28, 28, 29)
+            }
+        )
+        assertEquals(
+            Color.rgb(244, 247, 251),
+            view.textViewWithText("设置与隐私").currentTextColor
+        )
+    }
+
+    @Test
+    fun settingsQuestionMarkButtonsExposeSupportingCopyInDialogs() {
+        val view = SettingsViewFactory(RuntimeEnvironment.getApplication()).create(
+            state = SettingsViewState(
+                message = null,
+                zipCacheSummary = "ZIP 解包缓存：暂无"
+            ),
+            actions = emptySettingsActions()
+        )
+
+        view.assertHelpDialog(
+            tag = "settings-help-javascript",
+            expectedTitle = SettingsHelpCopy.JAVASCRIPT_TITLE,
+            expectedMessage = SettingsHelpCopy.JAVASCRIPT_MESSAGE
+        )
+        view.assertHelpDialog(
+            tag = "settings-help-cache",
+            expectedTitle = SettingsHelpCopy.CACHE_TITLE,
+            expectedMessage = SettingsHelpCopy.CACHE_MESSAGE
+        )
     }
 
     @Test
@@ -644,50 +796,34 @@ class HomeSettingsViewFactoryVisualTest {
     }
 
     @Test
-    fun settingsInfoIconsUseLargerDrawingBoundsInsideTiles() {
+    fun settingsHelpIconsUseCircleQuestionMarkVector() {
         val source = File("src/main/java/com/personalai/instantread/ui/SettingsViewFactory.kt").readText()
-        val iconSource = source
-            .substringAfter("private fun settingsInfoIcon")
-            .substringBefore("private fun transparentBackground")
-        val externalSource = iconSource
-            .substringAfter("private fun drawExternalLink")
-            .substringBefore("private fun drawShield")
-        val shieldSource = iconSource
-            .substringAfter("private fun drawShield")
-            .substringBefore("private fun drawSavedLocal")
-        val savedSource = iconSource
-            .substringAfter("private fun drawSavedLocal")
-            .substringBefore("private fun transparentBackground")
+        val helpVector = File("src/main/res/drawable/ic_instantread_help.xml").readText()
+        val linkVector = File("src/main/res/drawable/ic_instantread_external_link.xml").readText()
+        val shieldVector = File("src/main/res/drawable/ic_instantread_shield.xml").readText()
+        val archiveVector = File("src/main/res/drawable/ic_instantread_archive.xml").readText()
 
         assertTrue(
-            "Info icons should use a lighter reference-style stroke.",
-            iconSource.contains("strokeWidth = dpFloat(1.15f)")
+            "Settings should reuse the shared question-mark and privacy vectors.",
+            source.contains("InstantIcons.Help") &&
+                source.contains("InstantIcons.Shield") &&
+                source.contains("InstantIcons.Archive") &&
+                source.contains("InstantIcons.ExternalLink")
+        )
+        assertFalse(
+            "Help icons should not fall back to page-local Canvas drawing.",
+            source.contains("drawCircle(") || source.contains("drawText(\"?\")")
         )
         assertTrue(
-            "External-link icon should use a slightly smaller square frame instead of a wide rectangle.",
-            externalSource.contains("val iconBox = minOf(width, height) * 0.58f") &&
-                externalSource.contains("iconLeft + iconBox * 0.10f") &&
-                externalSource.contains("iconTop + iconBox * 0.28f") &&
-                externalSource.contains("iconLeft + iconBox * 0.74f") &&
-                externalSource.contains("iconTop + iconBox * 0.92f") &&
-                externalSource.contains("canvas.drawLine(left, top, left, bottom, iconStroke)") &&
-                externalSource.contains("canvas.drawLine(left, bottom, right, bottom, iconStroke)") &&
-                externalSource.contains("iconLeft + iconBox * 0.48f") &&
-                externalSource.contains("iconTop + iconBox * 0.52f") &&
-                externalSource.contains("iconLeft + iconBox * 0.84f") &&
-                externalSource.contains("iconTop + iconBox * 0.16f") &&
-                externalSource.contains("iconTop + iconBox * 0.40f")
+            "The help icon should be a circle containing a question mark.",
+            helpVector.contains("M9 2.5a6.5 6.5 0 1 0 0 13") &&
+                helpVector.contains("M6.9 6.7a2.25 2.25 0 0 1 4.35.75")
         )
         assertTrue(
-            "Shield icons should stay on the previous version while only the external-link icon changes.",
-            shieldSource.contains("val shieldBox = minOf(width, height) * 0.60f") &&
-                shieldSource.contains("iconLeft + shieldBox * 0.82f") &&
-                shieldSource.contains("iconLeft + shieldBox * 0.18f") &&
-                shieldSource.contains("iconTop + shieldBox * 0.88f") &&
-                savedSource.contains("val shieldBox = minOf(width, height) * 0.60f") &&
-                savedSource.contains("iconLeft + shieldBox * 0.82f") &&
-                savedSource.contains("iconLeft + shieldBox * 0.18f") &&
-                savedSource.contains("iconTop + shieldBox * 0.88f")
+            "Privacy icons should keep the existing prototype vector paths.",
+            linkVector.contains("M7.4 10.6a3 3 0 0 0 4.2 0l2.4-2.4a3 3 0 0 0-4.2-4.2l-1 1") &&
+                shieldVector.contains("M6 1.2 10.2 2.6v3.6c0 2.6-1.7 4.6-4.2 5.6-2.5-1-4.2-3-4.2-5.6V2.6L6 1.2Z") &&
+                archiveVector.contains("M3.4 6.2c0-.9.7-1.6 1.6-1.6h8c.9 0 1.6.7 1.6 1.6v6.4")
         )
     }
 
@@ -723,6 +859,7 @@ class HomeSettingsViewFactoryVisualTest {
 
         val text = view.visibleText().joinToString("\n")
 
+        assertTrue(text.contains("阅读显示"))
         assertTrue(text.contains("正文显示"))
         assertTrue(text.contains("右上角点击 Aa"))
         assertTrue(text.contains("字号"))
@@ -734,6 +871,7 @@ class HomeSettingsViewFactoryVisualTest {
         assertFalse(text.contains("紧凑"))
         assertFalse(text.contains("标准"))
         assertFalse(text.contains("舒适"))
+        assertEquals(0, view.viewsWithTag("settings-help-reading").size)
     }
 
     @Test
@@ -757,15 +895,15 @@ class HomeSettingsViewFactoryVisualTest {
     @Test
     fun settingsAvoidsOverusingBoldText() {
         val source = File("src/main/java/com/personalai/instantread/ui/SettingsViewFactory.kt").readText()
-        val rowTitleSource = source.substringAfter("private fun rowTitle").substringBefore("private fun bodyText")
+        val rowTitleSource = source.substringAfter("private fun rowTitle").substringBefore("private fun statusBadge")
         val sectionTitleSource = source.substringAfter("private fun sectionTitle").substringBefore("private fun sectionBlock")
         val footerSource = source.substringAfter("private fun createFooter").substringBefore("private fun createMessage")
-        val successSource = source.substringAfter("private fun successText").substringBefore("private fun statusBadge")
+        val statusBadgeSource = source.substringAfter("private fun statusBadge").substringBefore("private fun transparentBackground")
 
         assertFalse("Row titles should not all be forced bold.", rowTitleSource.contains("Typeface.BOLD"))
         assertFalse("Section labels should rely on size, color, and spacing instead of bold weight.", sectionTitleSource.contains("Typeface.BOLD"))
         assertFalse("Footer should be quiet metadata, not bold display text.", footerSource.contains("Typeface.BOLD"))
-        assertFalse("Cache availability should not need bold weight.", successSource.contains("Typeface.BOLD"))
+        assertFalse("Status badges should not need bold weight.", statusBadgeSource.contains("Typeface.BOLD"))
     }
 
     @Test
@@ -938,6 +1076,22 @@ class HomeSettingsViewFactoryVisualTest {
     private fun dp(value: Int): Int {
         val density = RuntimeEnvironment.getApplication().resources.displayMetrics.density
         return (value * density).toInt()
+    }
+
+    private fun View.assertHelpDialog(
+        tag: String,
+        expectedTitle: String,
+        expectedMessage: String
+    ) {
+        ShadowAlertDialog.reset()
+        singleViewWithTag(tag).performClick()
+
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull("Expected a help dialog for $tag.", dialog)
+        val shadowDialog = shadowOf(dialog)
+        assertEquals(expectedTitle, shadowDialog.title.toString())
+        assertEquals(expectedMessage, shadowDialog.message.toString())
+        dialog.dismiss()
     }
 
     private fun View.buttonWithText(expected: String): Button {

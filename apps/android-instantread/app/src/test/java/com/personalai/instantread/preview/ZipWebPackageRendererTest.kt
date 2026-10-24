@@ -114,6 +114,28 @@ class ZipWebPackageRendererTest {
     }
 
     @Test
+    fun invalidZipReturnsFormatErrorInsteadOfMissingEntry() {
+        val corrupt = temp.newFile("corrupt.zip").apply {
+            writeBytes(ByteArray(4096) { index -> (index * 31).toByte() })
+        }
+        val renderer = ZipWebPackageRenderer(cacheRoot = temp.newFolder("cache-invalid-zip"))
+
+        val error = renderer.render(imported(corrupt, "zip-invalid")) as PreviewModel.Error
+
+        assertEquals("ZIP 预览失败", error.title)
+        assertTrue(error.message.contains("可能不是有效的 ZIP 文件"))
+    }
+
+    @Test
+    fun validEmptyZipStillReportsMissingPreviewEntry() {
+        val renderer = ZipWebPackageRenderer(cacheRoot = temp.newFolder("cache-empty-zip"))
+
+        val error = renderer.render(imported(zipFile("empty.zip"), "zip-empty")) as PreviewModel.Error
+
+        assertEquals("ZIP 中没有可预览的网页入口", error.title)
+    }
+
+    @Test
     fun rendersMarkdownPackageIntoGeneratedReadingPage() {
         val zip = zipFile(
             "notes.zip",

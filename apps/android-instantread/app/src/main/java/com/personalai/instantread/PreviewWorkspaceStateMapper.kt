@@ -73,7 +73,8 @@ fun PreviewHistory.toRecentFileItem(): RecentFileItem {
         id = id,
         title = displayTitle(),
         fileTypeLabel = fileType.name,
-        isFavorite = favorite
+        isFavorite = favorite,
+        lastOpenedAt = lastOpenedAt
     )
 }
 

@@ -80,10 +80,10 @@ class ForegroundTaskViewFactory(
             )
             addView(
                 TextView(context).apply {
-                    text = "LOCAL PREVIEW"
+                    text = "本地预览"
                     setTextColor(theme.muted)
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                     includeFontPadding = false
                 },
                 LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {

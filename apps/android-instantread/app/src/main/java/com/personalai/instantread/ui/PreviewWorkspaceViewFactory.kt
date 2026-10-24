@@ -2,10 +2,7 @@ package com.personalai.instantread.ui
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -124,12 +121,12 @@ class PreviewWorkspaceViewFactory(
             setBackgroundColor(colors(state).surface)
             addView(appBar(state, actions), fullWidthHeightParams(59))
             addView(divider(state), fullWidthHeightParams(1))
-            addView(policyBar(state, actions), fullWidthHeightParams(30))
+            addView(policyBar(state, actions), fullWidthHeightParams(34))
             if (state.supportsDocumentReview) {
                 addView(documentModeSwitch(state, actions), fullWidthHeightParams(36))
             }
             if (state.supportsSearch && state.searchState.isOpen) {
-                addView(searchBar(state, actions), fullWidthHeightParams(42))
+                addView(searchBar(state, actions), fullWidthHeightParams(46))
             }
             addView(contentView, fullWidthWeightedParams())
             if (state.supportsReadingDisplayControls && state.isReadingDisplayPanelOpen) {
@@ -165,7 +162,7 @@ class PreviewWorkspaceViewFactory(
         divider.setBackgroundColor(colors(state).divider)
         replaceChild(root, 0, appBar(state, actions), fullWidthHeightParams(59))
         policyBar.setBackgroundColor(colors(state).policyBand)
-        replaceChild(policyBar, 0, javaScriptBadge(state, actions), ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(18)))
+        replaceChild(policyBar, 0, javaScriptBadge(state, actions), ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(22)))
         replaceChild(policyBar, 1, sandboxLabel(state), sandboxLabelParams())
         updateDocumentModeSwitch(root, state, actions)
         updateSearchBar(root, state, actions)
@@ -341,7 +338,7 @@ class PreviewWorkspaceViewFactory(
         val shouldShow = state.supportsSearch && state.searchState.isOpen
         when {
             shouldShow && existing >= 0 -> {
-                replaceChild(workspace, existing, searchBar(state, actions), fullWidthHeightParams(42))
+                replaceChild(workspace, existing, searchBar(state, actions), fullWidthHeightParams(46))
             }
             shouldShow -> {
                 workspace.addView(searchBar(state, actions), contentIndex(workspace), fullWidthHeightParams(42))
@@ -406,35 +403,22 @@ class PreviewWorkspaceViewFactory(
         state: PreviewWorkspaceState,
         actions: PreviewWorkspaceActions
     ): View {
-        return object : View(context) {
-            private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = colors(state).topIcon
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.45f)
-                strokeCap = Paint.Cap.ROUND
-            }
-
-            init {
-                tag = "preview-search-button"
-                contentDescription = "搜索"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onSearchOpened() }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f - dpFloat(1.5f)
-                val centerY = height / 2f - dpFloat(1f)
-                val radius = minOf(width, height) * 0.12f
-                canvas.drawCircle(centerX, centerY, radius, stroke)
-                canvas.drawLine(
-                    centerX + radius * 0.75f,
-                    centerY + radius * 0.75f,
-                    centerX + radius * 1.55f,
-                    centerY + radius * 1.55f,
-                    stroke
-                )
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.PreviewSearch,
+            tint = colors(state).topIcon,
+            iconWidthDp = 18f
+        ).apply {
+            tag = "preview-search-button"
+            contentDescription = if (state.searchState.isOpen) "关闭搜索" else "搜索"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                if (state.searchState.isOpen) {
+                    actions.onSearchClosed()
+                } else {
+                    actions.onSearchOpened()
+                }
             }
         }
     }
@@ -730,7 +714,7 @@ class PreviewWorkspaceViewFactory(
             tag = "preview-search-bar"
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(4), dp(16), dp(4))
+            setPadding(dp(16), dp(6), dp(16), dp(6))
             setBackgroundColor(colors.surface)
             addView(searchInput(state, actions), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             addView(searchCount(state), LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
@@ -751,7 +735,7 @@ class PreviewWorkspaceViewFactory(
             setText(state.searchState.query)
             setTextColor(colors.text)
             setHintTextColor(colors.muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             hint = "搜索文档"
             setSingleLine(true)
             includeFontPadding = false
@@ -777,7 +761,7 @@ class PreviewWorkspaceViewFactory(
             tag = "preview-search-count"
             text = state.searchState.displayLabel()
             setTextColor(colors.muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             includeFontPadding = false
             gravity = Gravity.CENTER
         }
@@ -815,11 +799,18 @@ class PreviewWorkspaceViewFactory(
             text = state.javaScriptStatus
             setTextColor(colors.policyText)
             setTypeface(typeface, Typeface.BOLD)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             includeFontPadding = false
             gravity = Gravity.CENTER
-            background = rounded(colors.policyBadge, radiusDp = 3, strokeColor = colors.policyStroke)
-            setPadding(dp(7), 0, dp(7), 0)
+            background = rounded(colors.policyBadge, radiusDp = 6, strokeColor = colors.policyStroke)
+            setPadding(dp(9), 0, dp(9), 0)
+            setCompoundDrawablesWithIntrinsicBounds(
+                instantIconDrawable(context, InstantIcons.Shield, colors.policyText, 11f),
+                null,
+                null,
+                null
+            )
+            compoundDrawablePadding = dp(5)
             if (state.supportsScriptAuthorization) {
                 isClickable = true
                 isFocusable = true
@@ -839,7 +830,7 @@ class PreviewWorkspaceViewFactory(
             tag = "preview-sandbox-label"
             text = state.navigationStatus
             setTextColor(colors.muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             includeFontPadding = false
             gravity = Gravity.CENTER_VERTICAL or Gravity.RIGHT
             maxLines = 1
@@ -848,31 +839,17 @@ class PreviewWorkspaceViewFactory(
     }
 
     private fun backButton(actions: PreviewWorkspaceActions): View {
-        return object : View(context) {
-            private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = COLOR_TEXT
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.6f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-
-            init {
-                tag = "preview-back-button"
-                contentDescription = "返回"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onBack() }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f - dpFloat(1f)
-                val centerY = height / 2f
-                val arm = minOf(width, height) * 0.14f
-                canvas.drawLine(centerX + arm * 0.45f, centerY - arm, centerX - arm * 0.45f, centerY, stroke)
-                canvas.drawLine(centerX - arm * 0.45f, centerY, centerX + arm * 0.45f, centerY + arm, stroke)
-            }
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.Back,
+            tint = COLOR_TOP_ICON,
+            iconWidthDp = 18f
+        ).apply {
+            tag = "preview-back-button"
+            contentDescription = "返回"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onBack() }
         }
     }
 
@@ -880,52 +857,19 @@ class PreviewWorkspaceViewFactory(
         state: PreviewWorkspaceState,
         actions: PreviewWorkspaceActions
     ): View {
-        return object : View(context) {
-            private val colors = colors(state)
-            private val starStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = colors.topIcon
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.45f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-            private val starFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = colors.topIcon
-                style = Paint.Style.FILL
-            }
-            private val starPath = Path()
-
-            init {
-                tag = "preview-favorite-button"
-                contentDescription = if (state.isFavorite) "取消收藏" else "收藏"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onToggleFavorite() }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f
-                val centerY = height / 2f + dpFloat(0.5f)
-                val outer = minOf(width, height) * 0.21f
-                val inner = outer * 0.47f
-                starPath.reset()
-                for (index in 0 until 10) {
-                    val radius = if (index % 2 == 0) outer else inner
-                    val angle = Math.toRadians((-90 + index * 36).toDouble())
-                    val x = centerX + kotlin.math.cos(angle).toFloat() * radius
-                    val y = centerY + kotlin.math.sin(angle).toFloat() * radius
-                    if (index == 0) {
-                        starPath.moveTo(x, y)
-                    } else {
-                        starPath.lineTo(x, y)
-                    }
-                }
-                starPath.close()
-                starFill.alpha = if (state.isFavorite) 255 else 0
-                canvas.drawPath(starPath, starFill)
-                canvas.drawPath(starPath, starStroke)
-            }
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.Star,
+            tint = colors(state).topIcon,
+            iconWidthDp = 17f,
+            active = state.isFavorite,
+            activeTint = colors(state).favoriteOn
+        ).apply {
+            tag = "preview-favorite-button"
+            contentDescription = if (state.isFavorite) "取消收藏" else "收藏"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onToggleFavorite() }
         }
     }
 
@@ -1009,7 +953,8 @@ class PreviewWorkspaceViewFactory(
                 segmentSurface = COLOR_DARK_SEGMENT_SURFACE,
                 segmentSelected = COLOR_DARK_SEGMENT_SELECTED,
                 segmentStroke = COLOR_DARK_SEGMENT_STROKE,
-                segmentSelectedText = COLOR_DARK_TEXT
+                segmentSelectedText = COLOR_DARK_TEXT,
+                favoriteOn = COLOR_FAVORITE_ON
             )
         } else {
             WorkspaceColors(
@@ -1026,7 +971,8 @@ class PreviewWorkspaceViewFactory(
                 segmentSurface = COLOR_SEGMENT_SURFACE,
                 segmentSelected = COLOR_TEXT,
                 segmentStroke = COLOR_SEGMENT_STROKE,
-                segmentSelectedText = Color.WHITE
+                segmentSelectedText = Color.WHITE,
+                favoriteOn = COLOR_FAVORITE_ON
             )
         }
     }
@@ -1045,7 +991,8 @@ class PreviewWorkspaceViewFactory(
         val segmentSurface: Int,
         val segmentSelected: Int,
         val segmentStroke: Int,
-        val segmentSelectedText: Int
+        val segmentSelectedText: Int,
+        val favoriteOn: Int
     )
 
     private fun rounded(
@@ -1091,10 +1038,6 @@ class PreviewWorkspaceViewFactory(
         return (value * context.resources.displayMetrics.density).toInt()
     }
 
-    private fun dpFloat(value: Float): Float {
-        return value * context.resources.displayMetrics.density
-    }
-
     private companion object {
         val COLOR_SURFACE: Int = Color.WHITE
         val COLOR_TEXT: Int = Color.rgb(15, 23, 42)
@@ -1102,7 +1045,7 @@ class PreviewWorkspaceViewFactory(
         val COLOR_DIVIDER: Int = Color.rgb(235, 240, 247)
         val COLOR_TOP_ICON: Int = Color.rgb(142, 162, 194)
         val COLOR_TOP_ICON_SURFACE: Int = Color.rgb(248, 251, 255)
-        val COLOR_SUN_ICON: Int = Color.rgb(245, 180, 0)
+        val COLOR_FAVORITE_ON: Int = Color.rgb(37, 99, 235)
         val COLOR_POLICY_BAND: Int = Color.rgb(249, 251, 254)
         val COLOR_POLICY_TEXT: Int = Color.rgb(30, 64, 115)
         val COLOR_POLICY_BADGE: Int = Color.rgb(239, 246, 255)

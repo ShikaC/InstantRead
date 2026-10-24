@@ -27,15 +27,19 @@ class ReleaseBuildConfigurationTest {
     }
 
     @Test
-    fun firstReleaseCandidateUsesRcVersion() {
+    fun stableReleaseUsesPromotedVersion() {
         val build = File("build.gradle.kts").readText()
 
         assertTrue(
-            "The first InstantRead candidate should keep Android versionCode 1.",
-            Regex("""(?m)^\s*versionCode\s*=\s*1\s*$""").containsMatchIn(build)
+            "The stable release should use a versionCode greater than the rc1 candidate.",
+            Regex("""(?m)^\s*versionCode\s*=\s*2\s*$""").containsMatchIn(build)
         )
         assertTrue(
-            "The first InstantRead candidate should expose the rc1 semantic version.",
+            "The stable release should expose the promoted semantic version.",
+            build.contains("versionName = \"0.1.0\"")
+        )
+        assertFalse(
+            "The stable release must not keep the rc1 suffix.",
             build.contains("versionName = \"0.1.0-rc1\"")
         )
         assertTrue(

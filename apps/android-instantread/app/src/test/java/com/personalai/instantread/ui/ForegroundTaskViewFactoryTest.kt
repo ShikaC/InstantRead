@@ -51,7 +51,7 @@ class ForegroundTaskViewFactoryTest {
 
         val visibleText = view.visibleText()
         assertTrue(visibleText.contains("即阅"))
-        assertTrue(visibleText.contains("LOCAL PREVIEW"))
+        assertTrue(visibleText.contains("本地预览"))
         assertTrue(visibleText.contains("report.zip"))
         assertTrue(visibleText.contains("正在导入文件"))
         assertTrue(visibleText.contains("25%"))

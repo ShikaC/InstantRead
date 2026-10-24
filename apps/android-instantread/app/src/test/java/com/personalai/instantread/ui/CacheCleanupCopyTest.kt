@@ -3,13 +3,17 @@ package com.personalai.instantread.ui
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlertDialog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -82,7 +86,7 @@ class CacheCleanupCopyTest {
     }
 
     @Test
-    fun settingsExplainThatCacheCleanupKeepsImportedSourceFiles() {
+    fun settingsHelpExplainsThatCacheCleanupKeepsImportedSourceFiles() {
         val view = SettingsViewFactory(RuntimeEnvironment.getApplication()).create(
             state = SettingsViewState(
                 message = null,
@@ -97,9 +101,13 @@ class CacheCleanupCopyTest {
         val text = view.visibleText().joinToString("\n")
 
         assertTrue(text.contains("清理 ZIP 缓存"))
-        assertTrue(text.contains("最近记录、收藏和导入源文件都会保留"))
-        assertTrue(text.contains("下次打开 ZIP 会自动重新解包"))
-        assertTrue(text.contains("卸载应用或清除应用数据会移除全部记录、应用内副本和缓存，但不会删除手机里的原始文件。"))
+        assertTrue(text.contains("当前缓存"))
+        assertFalse(text.contains("最近记录、收藏和导入源文件都会保留"))
+        view.assertHelpDialog(
+            tag = "settings-help-cache",
+            expectedTitle = SettingsHelpCopy.CACHE_TITLE,
+            expectedMessage = SettingsHelpCopy.CACHE_MESSAGE
+        )
     }
 
     @Test
@@ -117,9 +125,14 @@ class CacheCleanupCopyTest {
 
         val text = view.visibleText().joinToString("\n")
 
-        assertTrue(text.contains("ZIP 解包缓存：2 个目录，3 个文件，128 B"))
+        assertTrue(text.contains("可用"))
         assertTrue(text.contains("已清理 ZIP 解包缓存：2 个目录，3 个文件，128 B。"))
-        assertTrue(text.contains("清理只删除已解包资源，最近记录、收藏和导入源文件都会保留。"))
+        assertFalse(text.contains("清理只删除已解包资源"))
+        view.assertHelpDialog(
+            tag = "settings-help-cache",
+            expectedTitle = SettingsHelpCopy.CACHE_TITLE,
+            expectedMessage = SettingsHelpCopy.CACHE_MESSAGE
+        )
     }
 
     private fun View.visibleText(): List<String> {
@@ -178,5 +191,22 @@ class CacheCleanupCopyTest {
         }
         collect(this)
         return result
+    }
+
+    private fun View.assertHelpDialog(
+        tag: String,
+        expectedTitle: String,
+        expectedMessage: String
+    ) {
+        ShadowAlertDialog.reset()
+        val helpButton = viewsWithTag(tag).single()
+        helpButton.performClick()
+
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull("Expected a help dialog for $tag.", dialog)
+        val shadowDialog = shadowOf(dialog)
+        assertEquals(expectedTitle, shadowDialog.title.toString())
+        assertEquals(expectedMessage, shadowDialog.message.toString())
+        dialog.dismiss()
     }
 }

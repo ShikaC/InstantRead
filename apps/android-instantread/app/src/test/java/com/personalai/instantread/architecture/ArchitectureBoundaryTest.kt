@@ -281,8 +281,9 @@ class ArchitectureBoundaryTest {
         )
         assertTrue(
             "Imported history must only be written from the successful workflow callback.",
-            Regex("onSuccess\\s*=\\s*\\{\\s*imported\\s*->\\s*val history = historyRepository\\.upsertImported\\(imported\\)")
-                .containsMatchIn(source)
+            Regex("onSuccess\\s*=\\s*\\{\\s*imported\\s*->\\s*val history = historyRepository\\.upsertImported\\(imported")
+                .containsMatchIn(source) &&
+                Regex("historyRepository\\.upsertImported\\(").findAll(source).count() == 1
         )
     }
 

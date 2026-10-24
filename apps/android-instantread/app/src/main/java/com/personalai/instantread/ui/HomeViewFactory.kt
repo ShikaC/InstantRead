@@ -1,11 +1,7 @@
 package com.personalai.instantread.ui
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
@@ -31,7 +27,8 @@ data class RecentFileItem(
     val title: String,
     val fileTypeLabel: String,
     val isFavorite: Boolean,
-    val warningLabel: String? = null
+    val warningLabel: String? = null,
+    val lastOpenedAt: Long? = null
 )
 
 enum class HomeListFilter {
@@ -47,6 +44,8 @@ class HomeActions(
     val onToggleFavorite: (String) -> Unit,
     val onDeleteHistory: (String) -> Unit,
     val onCancelDelete: () -> Unit = {},
+    val onClearHistory: () -> Unit = {},
+    val onCancelClearHistory: () -> Unit = {},
     val onToggleTheme: () -> Unit = {},
     val onFilterChanged: (HomeListFilter) -> Unit = {},
     val onSearchQueryChanged: (String) -> Unit = {}
@@ -63,8 +62,10 @@ class HomeViewFactory(
         searchQuery: String = "",
         totalRecentCount: Int = recentFiles.size,
         favoriteRecentCount: Int = recentFiles.count { it.isFavorite },
+        clearableRecentCount: Int = 0,
         actions: HomeActions,
-        pendingDeleteFile: RecentFileItem? = null
+        pendingDeleteFile: RecentFileItem? = null,
+        pendingClearHistory: Boolean = false
     ): FrameLayout {
         val theme = HomeTheme.from(isDarkTheme)
         val page = FrameLayout(context).apply {
@@ -82,6 +83,7 @@ class HomeViewFactory(
                     searchQuery,
                     totalRecentCount,
                     favoriteRecentCount,
+                    clearableRecentCount,
                     actions,
                     theme
                 ),
@@ -93,6 +95,9 @@ class HomeViewFactory(
 
         if (pendingDeleteFile != null) {
             page.addView(createDeleteSheet(pendingDeleteFile, actions, theme), bottomSheetParams())
+        }
+        if (pendingClearHistory) {
+            page.addView(createClearSheet(clearableRecentCount, actions, theme), bottomSheetParams())
         }
 
         return page
@@ -124,10 +129,10 @@ class HomeViewFactory(
                     )
                     addView(
                         TextView(context).apply {
-                            text = "LOCAL PREVIEW"
+                            text = "本地预览"
                             setTextColor(theme.muted)
                             setTypeface(typeface, Typeface.BOLD)
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                             includeFontPadding = false
                         },
                         inlineParams(start = 6)
@@ -135,10 +140,10 @@ class HomeViewFactory(
                 },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             )
-            addView(createThemeButton(actions, theme), iconButtonParams())
+            addView(createThemeButton(actions, theme), appBarIconButtonParams())
             addView(
                 createSettingsButton(actions, theme),
-                iconButtonParams(start = 8)
+                appBarIconButtonParams(start = 8)
             )
         }
     }
@@ -150,6 +155,7 @@ class HomeViewFactory(
         searchQuery: String,
         totalRecentCount: Int,
         favoriteRecentCount: Int,
+        clearableRecentCount: Int,
         actions: HomeActions,
         theme: HomeTheme
     ): ScrollView {
@@ -157,12 +163,12 @@ class HomeViewFactory(
             orientation = LinearLayout.VERTICAL
             setPadding(dp(13), dp(23), dp(13), dp(24))
             addView(createPrimaryAction(actions, theme), fixedSpacedParams(height = 52, bottom = 15))
-            addView(createPrivacyRow(theme), centeredFixedSpacedParams(height = 21, bottom = 14))
-            addView(createSearchRow(searchQuery, actions, theme), fixedSpacedParams(height = 36, bottom = 18))
+            addView(createPrivacyRow(theme), centeredFixedSpacedParams(height = 26, bottom = 14))
+            addView(createSearchRow(searchQuery, actions, theme), fixedSpacedParams(height = 42, bottom = 18))
             if (message != null) {
                 addView(createMessage(message, theme), spacedParams(bottom = 20))
             }
-            addRecentList(this, recentFiles, selectedFilter, searchQuery, totalRecentCount, favoriteRecentCount, actions, theme)
+            addRecentList(this, recentFiles, selectedFilter, searchQuery, totalRecentCount, favoriteRecentCount, clearableRecentCount, actions, theme)
         }
 
         return ScrollView(context).apply {
@@ -200,14 +206,21 @@ class HomeViewFactory(
             gravity = Gravity.CENTER_VERTICAL
             addView(
                 TextView(context).apply {
-                        text = "⊙  PRIVACY PROTECTED"
+                    text = "仅在本机解析"
                     setTextColor(theme.privacy)
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                     includeFontPadding = false
-                    background = rounded(theme.privacySurface, radiusDp = 3)
-                    setPadding(dp(7), 0, dp(7), 0)
+                    background = rounded(theme.privacySurface, radiusDp = 13)
+                    setPadding(dp(10), 0, dp(11), 0)
                     gravity = Gravity.CENTER
+                    setCompoundDrawablesWithIntrinsicBounds(
+                        instantIconDrawable(context, InstantIcons.Shield, theme.privacy, 12f),
+                        null,
+                        null,
+                        null
+                    )
+                    compoundDrawablePadding = dp(6)
                 },
                 ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -216,13 +229,13 @@ class HomeViewFactory(
             )
             addView(
                 TextView(context).apply {
-                        text = "文件仅在本地解析"
+                    text = "不上传 · 无网络权限"
                     setTextColor(theme.muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 8f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                     includeFontPadding = false
                     gravity = Gravity.CENTER_VERTICAL
                 },
-                inlineParams(start = 8)
+                inlineParams(start = 10)
             )
         }
     }
@@ -244,8 +257,15 @@ class HomeViewFactory(
             tag = "home-search-row"
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = rounded(theme.searchSurface, radiusDp = 10, strokeColor = theme.divider)
-            setPadding(dp(11), 0, dp(6), 0)
+            background = rounded(theme.searchSurface, radiusDp = 13, strokeColor = theme.divider)
+            setPadding(dp(12), 0, dp(6), 0)
+            addView(
+                InstantIconView(context, InstantIcons.Search, theme.muted, 15f),
+                LinearLayout.LayoutParams(dp(15), dp(15)).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    rightMargin = dp(9)
+                }
+            )
             addView(
                 EditText(context).apply {
                     tag = "home-search-input"
@@ -258,7 +278,7 @@ class HomeViewFactory(
                     setSingleLine(true)
                     setTextColor(theme.text)
                     setHintTextColor(theme.muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
                     includeFontPadding = false
                     background = null
                     addTextChangedListener(object : TextWatcher {
@@ -295,7 +315,7 @@ class HomeViewFactory(
                         gravity = Gravity.CENTER
                         includeFontPadding = false
                         setTextColor(theme.muted)
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
                         contentDescription = "退出搜索"
                         isClickable = true
                         isFocusable = true
@@ -314,6 +334,7 @@ class HomeViewFactory(
         searchQuery: String,
         totalRecentCount: Int,
         favoriteRecentCount: Int,
+        clearableRecentCount: Int,
         actions: HomeActions,
         theme: HomeTheme
     ) {
@@ -324,6 +345,7 @@ class HomeViewFactory(
                 searchQuery,
                 totalRecentCount,
                 favoriteRecentCount,
+                clearableRecentCount,
                 actions,
                 theme
             ),
@@ -336,19 +358,8 @@ class HomeViewFactory(
         }
         if (recentFiles.isEmpty()) {
             list.addView(
-                TextView(context).apply {
-                    text = when {
-                        searchQuery.isNotBlank() && selectedFilter == HomeListFilter.FAVORITES -> "收藏中没有匹配记录"
-                        searchQuery.isNotBlank() -> "没有匹配的记录"
-                        selectedFilter == HomeListFilter.FAVORITES -> "暂无收藏文件"
-                        else -> "暂无最近记录"
-                    }
-                    gravity = Gravity.CENTER_VERTICAL
-                    setTextColor(theme.muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setPadding(dp(1), 0, dp(1), 0)
-                },
-                fullWidthHeightParams(73)
+                createEmptyState(selectedFilter, searchQuery, theme),
+                fullWidthWrapContentParams()
             )
         } else {
             recentFiles.forEachIndexed { index, item ->
@@ -361,12 +372,80 @@ class HomeViewFactory(
         root.addView(list, fullWidthWrapContentParams())
     }
 
+    private fun createEmptyState(
+        selectedFilter: HomeListFilter,
+        searchQuery: String,
+        theme: HomeTheme
+    ): LinearLayout {
+        val searching = searchQuery.isNotBlank()
+        val favorites = selectedFilter == HomeListFilter.FAVORITES
+        val title = when {
+            searching && favorites -> "收藏中没有匹配记录"
+            searching -> "没有匹配的记录"
+            favorites -> "暂无收藏文件"
+            else -> "暂无最近记录"
+        }
+        val hint = when {
+            searching && favorites -> "换个关键词试试，或者清空搜索查看全部收藏。"
+            searching -> "换个关键词试试，或者清空搜索查看全部记录。"
+            favorites -> "在最近记录里点击星标即可收藏文件。"
+            else -> "选择本地文件后，这里会保留打开过的 HTML、Markdown、TXT 与 ZIP 网页包。"
+        }
+        return LinearLayout(context).apply {
+            tag = "home-empty-state"
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(26), dp(40), dp(26), dp(40))
+            addView(
+                createEmptyBadge(searching, theme),
+                ViewGroup.LayoutParams(dp(56), dp(56))
+            )
+            addView(
+                TextView(context).apply {
+                    text = title
+                    gravity = Gravity.CENTER
+                    setTextColor(theme.text)
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    includeFontPadding = false
+                },
+                spacedParams(top = 14)
+            )
+            addView(
+                TextView(context).apply {
+                    text = hint
+                    gravity = Gravity.CENTER
+                    setTextColor(theme.muted)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                    setLineSpacing(0f, 1.3f)
+                },
+                spacedParams(top = 7)
+            )
+        }
+    }
+
+    private fun createEmptyBadge(searching: Boolean, theme: HomeTheme): FrameLayout {
+        return FrameLayout(context).apply {
+            background = rounded(theme.iconTile, radiusDp = 18, strokeColor = theme.divider)
+            addView(
+                InstantIconView(
+                    context,
+                    if (searching) InstantIcons.FileText else InstantIcons.FileMarkdown,
+                    theme.topIcon,
+                    19f
+                ),
+                FrameLayout.LayoutParams(dp(19), dp(19), Gravity.CENTER)
+            )
+        }
+    }
+
     private fun createRecentHeader(
         selectedFilter: HomeListFilter,
         resultCount: Int,
         searchQuery: String,
         totalRecentCount: Int,
         favoriteRecentCount: Int,
+        clearableRecentCount: Int,
         actions: HomeActions,
         theme: HomeTheme
     ): LinearLayout {
@@ -385,10 +464,79 @@ class HomeViewFactory(
                 },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             )
-            addView(createFilterButton("全部 $totalRecentCount", "home-filter-all", HomeListFilter.ALL, totalRecentCount, selectedFilter, actions, theme))
             addView(
-                createFilterButton("收藏 $favoriteRecentCount", "home-filter-favorites", HomeListFilter.FAVORITES, favoriteRecentCount, selectedFilter, actions, theme),
-                inlineParams(start = 4)
+                createFilterGroup(
+                    totalRecentCount = totalRecentCount,
+                    favoriteRecentCount = favoriteRecentCount,
+                    selectedFilter = selectedFilter,
+                    actions = actions,
+                    theme = theme
+                ),
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            if (clearableRecentCount > 0) {
+                addView(
+                    TextView(context).apply {
+                        tag = "home-clear-history-button"
+                        text = "清空"
+                        gravity = Gravity.CENTER
+                        includeFontPadding = false
+                        setTextColor(theme.muted)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                        minWidth = dp(40)
+                        minimumWidth = dp(40)
+                        minHeight = dp(24)
+                        minimumHeight = dp(24)
+                        background = rounded(theme.searchSurface, radiusDp = 8, strokeColor = theme.divider)
+                        isClickable = true
+                        isFocusable = true
+                        contentDescription = "清空 $clearableRecentCount 条未收藏记录，收藏会保留"
+                        setOnClickListener { actions.onClearHistory() }
+                    },
+                    inlineParams(start = 8)
+                )
+            }
+        }
+    }
+
+    private fun createFilterGroup(
+        totalRecentCount: Int,
+        favoriteRecentCount: Int,
+        selectedFilter: HomeListFilter,
+        actions: HomeActions,
+        theme: HomeTheme
+    ): LinearLayout {
+        return LinearLayout(context).apply {
+            tag = "home-filter-group"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(theme.searchSurface, radiusDp = 11, strokeColor = theme.divider)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
+            addView(
+                createFilterButton(
+                    "全部 $totalRecentCount",
+                    "home-filter-all",
+                    HomeListFilter.ALL,
+                    totalRecentCount,
+                    selectedFilter,
+                    actions,
+                    theme
+                )
+            )
+            addView(
+                createFilterButton(
+                    "收藏 $favoriteRecentCount",
+                    "home-filter-favorites",
+                    HomeListFilter.FAVORITES,
+                    favoriteRecentCount,
+                    selectedFilter,
+                    actions,
+                    theme
+                ),
+                inlineParams(start = 3)
             )
         }
     }
@@ -417,7 +565,7 @@ class HomeViewFactory(
             minimumHeight = dp(24)
             background = rounded(
                 color = if (isSelected) theme.primaryActionBackground else Color.TRANSPARENT,
-                radiusDp = 7,
+                radiusDp = 8,
                 strokeColor = if (isSelected) null else theme.divider
             )
             setPadding(dp(9), 0, dp(9), 0)
@@ -443,7 +591,7 @@ class HomeViewFactory(
             setOnClickListener { actions.onOpenHistory(item.id) }
             addView(
                 fileIconView(item, theme),
-                ViewGroup.LayoutParams(dp(40), dp(40))
+                ViewGroup.LayoutParams(dp(42), dp(42))
             )
             addView(
                 LinearLayout(context).apply {
@@ -466,175 +614,62 @@ class HomeViewFactory(
                 iconButtonParams()
             )
             addView(
-                deleteIconButton(item, actions),
+                deleteIconButton(item, actions, theme),
                 iconButtonParams()
             )
         }
     }
 
-    private fun fileIconView(item: RecentFileItem, theme: HomeTheme): View {
-        return object : View(context) {
-            private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = fileTypeColor(item.fileTypeLabel)
-                style = Paint.Style.STROKE
-                strokeWidth = dp(1).toFloat()
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-            private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = fileTypeSurface(item.fileTypeLabel)
-                style = Paint.Style.FILL
-            }
-
-            init {
-                tag = "recent-file-icon"
-                background = rounded(theme.iconTile, radiusDp = 10, strokeColor = theme.divider)
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val left = width / 2f - dp(6)
-                val top = height / 2f - dp(8)
-                val right = width / 2f + dp(6)
-                val bottom = height / 2f + dp(8)
-                val fold = dp(4).toFloat()
-                val body = Path().apply {
-                    moveTo(left, top)
-                    lineTo(right - fold, top)
-                    lineTo(right, top + fold)
-                    lineTo(right, bottom)
-                    lineTo(left, bottom)
-                    close()
-                }
-                canvas.drawPath(body, fill)
-                canvas.drawPath(body, line)
-                canvas.drawLine(right - fold, top, right - fold, top + fold, line)
-                canvas.drawLine(right - fold, top + fold, right, top + fold, line)
-                drawTypeMark(canvas, item.fileTypeLabel, left, top, right, bottom)
-            }
-
-            private fun drawTypeMark(
-                canvas: Canvas,
-                label: String,
-                left: Float,
-                top: Float,
-                right: Float,
-                bottom: Float
-            ) {
-                when {
-                    label.contains("HTML", ignoreCase = true) ->
-                        canvas.drawCircle((left + right) / 2f, (top + bottom) / 2f + dp(2), dp(2).toFloat(), line)
-                    label.contains("MARKDOWN", ignoreCase = true) || label.contains("Markdown", ignoreCase = true) -> {
-                        canvas.drawLine(left + dp(3), bottom - dp(4), right - dp(3), bottom - dp(4), line)
-                        canvas.drawLine(left + dp(3), bottom - dp(8), right - dp(3), bottom - dp(8), line)
-                    }
-                    label.contains("TEXT", ignoreCase = true) || label.contains("TXT", ignoreCase = true) -> {
-                        canvas.drawLine(left + dp(3), top + dp(6), right - dp(3), top + dp(6), line)
-                        canvas.drawLine(left + dp(3), top + dp(10), right - dp(3), top + dp(10), line)
-                        canvas.drawLine(left + dp(3), top + dp(14), right - dp(5), top + dp(14), line)
-                    }
-                    label.contains("ZIP", ignoreCase = true) -> {
-                        canvas.drawLine(left + dp(5), top + dp(5), left + dp(5), bottom - dp(4), line)
-                        canvas.drawLine(left + dp(7), top + dp(7), left + dp(7), bottom - dp(6), line)
-                    }
-                }
-            }
+    private fun fileIconView(item: RecentFileItem, theme: HomeTheme): FrameLayout {
+        return FrameLayout(context).apply {
+            tag = "recent-file-icon"
+            background = rounded(
+                fileTypeSurface(item.fileTypeLabel, theme),
+                radiusDp = 13,
+                strokeColor = fileTypeStroke(item.fileTypeLabel, theme)
+            )
+            addView(
+                InstantIconView(
+                    context,
+                    fileTypeIcon(item.fileTypeLabel),
+                    fileTypeColor(item.fileTypeLabel),
+                    32f
+                ),
+                FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER)
+            )
         }
     }
 
     private fun favoriteIconButton(item: RecentFileItem, actions: HomeActions, theme: HomeTheme): View {
-        return object : View(context) {
-            private val starStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.favoriteIcon
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.7f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-            private val starFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.favoriteIcon
-                style = Paint.Style.FILL
-            }
-            private val starPath = Path()
-
-            init {
-                tag = "recent-favorite-button"
-                contentDescription = if (item.isFavorite) "取消收藏" else "收藏"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onToggleFavorite(item.id) }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f
-                val centerY = height / 2f
-                val outer = minOf(width, height) * 0.25f
-                val inner = outer * 0.47f
-                starPath.reset()
-                for (index in 0 until 10) {
-                    val radius = if (index % 2 == 0) outer else inner
-                    val angle = Math.toRadians((-90 + index * 36).toDouble())
-                    val x = centerX + kotlin.math.cos(angle).toFloat() * radius
-                    val y = centerY + kotlin.math.sin(angle).toFloat() * radius
-                    if (index == 0) {
-                        starPath.moveTo(x, y)
-                    } else {
-                        starPath.lineTo(x, y)
-                    }
-                }
-                starPath.close()
-                starFill.alpha = if (item.isFavorite) 255 else 0
-                canvas.drawPath(starPath, starFill)
-                canvas.drawPath(starPath, starStroke)
-            }
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.Star,
+            tint = theme.topIcon,
+            iconWidthDp = 17f,
+            active = item.isFavorite,
+            activeTint = theme.favoriteOn
+        ).apply {
+            tag = "recent-favorite-button"
+            contentDescription = if (item.isFavorite) "取消收藏" else "收藏"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onToggleFavorite(item.id) }
         }
     }
 
-    private fun deleteIconButton(item: RecentFileItem, actions: HomeActions): View {
-        return object : View(context) {
-            private val trashStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = COLOR_DELETE_ICON
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.55f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-
-            init {
-                tag = "recent-delete-button"
-                isClickable = true
-                setOnClickListener { actions.onDeleteHistory(item.id) }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f
-                val iconCenterY = height / 2f
-                val bodyWidth = dpFloat(10.8f)
-                val bodyHeight = dpFloat(14f)
-                val left = centerX - bodyWidth / 2f
-                val totalHeight = bodyHeight + dpFloat(3f)
-                val top = iconCenterY - totalHeight / 2f + dpFloat(3f)
-                val right = centerX + bodyWidth / 2f
-                val bottom = top + bodyHeight
-                canvas.drawRoundRect(
-                    RectF(left, top, right, bottom),
-                    dpFloat(1.7f),
-                    dpFloat(1.7f),
-                    trashStroke
-                )
-                val lidY = top
-                val handleTop = lidY - dpFloat(3f)
-                val handleLeft = centerX - dpFloat(2.8f)
-                val handleRight = centerX + dpFloat(2.8f)
-                canvas.drawLine(left - dpFloat(2.3f), lidY, right + dpFloat(2.3f), lidY, trashStroke)
-                canvas.drawLine(handleLeft, lidY, handleLeft, handleTop, trashStroke)
-                canvas.drawLine(handleLeft, handleTop, handleRight, handleTop, trashStroke)
-                canvas.drawLine(handleRight, handleTop, handleRight, lidY, trashStroke)
-                canvas.drawLine(centerX - dpFloat(2.8f), top + dpFloat(3.2f), centerX - dpFloat(2.8f), bottom - dpFloat(3f), trashStroke)
-                canvas.drawLine(centerX + dpFloat(2.8f), top + dpFloat(3.2f), centerX + dpFloat(2.8f), bottom - dpFloat(3f), trashStroke)
-            }
+    private fun deleteIconButton(item: RecentFileItem, actions: HomeActions, theme: HomeTheme): View {
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.Trash,
+            tint = theme.topIcon,
+            iconWidthDp = 16f,
+            pressedTint = theme.deleteIcon
+        ).apply {
+            tag = "recent-delete-button"
+            contentDescription = "删除"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onDeleteHistory(item.id) }
         }
     }
 
@@ -644,11 +679,11 @@ class HomeViewFactory(
             gravity = Gravity.CENTER_VERTICAL
             addView(
                 TextView(context).apply {
-                    text = highlightedSearchText(item.fileTypeLabel, searchQuery, theme.searchHighlight)
+                    text = highlightedSearchText(recentMetaLabel(item), searchQuery, theme.searchHighlight)
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                     setTextColor(theme.muted)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                     includeFontPadding = false
                 },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -667,7 +702,7 @@ class HomeViewFactory(
                     ellipsize = TextUtils.TruncateAt.END
                     setTextColor(theme.text)
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
                     includeFontPadding = false
                 },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -717,7 +752,17 @@ class HomeViewFactory(
             tag = "home-delete-sheet"
             orientation = LinearLayout.VERTICAL
             background = rounded(theme.surface, radiusDp = 24, strokeColor = theme.divider)
-            setPadding(dp(20), dp(18), dp(20), dp(20))
+            setPadding(dp(20), dp(12), dp(20), dp(20))
+            addView(
+                View(context).apply {
+                    tag = "home-delete-handle"
+                    background = rounded(theme.divider, radiusDp = 2)
+                },
+                LinearLayout.LayoutParams(dp(36), dp(4)).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(14)
+                }
+            )
             addView(
                 TextView(context).apply {
                     text = "删除这条最近记录？"
@@ -762,163 +807,97 @@ class HomeViewFactory(
             text = "版本 ${BuildConfig.VERSION_NAME} • 系统安全解析已开启"
             gravity = Gravity.CENTER
             setTextColor(theme.muted)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             setPadding(dp(8), 0, dp(8), dp(8))
         }
     }
 
-    private fun createThemeButton(actions: HomeActions, theme: HomeTheme): View {
-        return object : View(context) {
-            private val backgroundFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.topIconSurface
-                style = Paint.Style.FILL
-            }
-            private val moonFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.topIcon
-                style = Paint.Style.FILL
-            }
-            private val moonCutout = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.topIconSurface
-                style = Paint.Style.FILL
-            }
-            private val sunStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = COLOR_SUN_ICON
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.35f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-            private val sunFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = COLOR_SUN_ICON
-                style = Paint.Style.FILL
-            }
-            init {
-                tag = "home-theme-button"
-                contentDescription = if (theme.isDark) "日间模式" else "夜间模式"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onToggleTheme() }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f
-                val centerY = height / 2f
-                val buttonRadius = minOf(width, height) * 0.31f
-                canvas.drawCircle(centerX, centerY, buttonRadius, backgroundFill)
-
-                if (theme.isDark) {
-                    drawSunIcon(canvas, centerX, centerY, minOf(width, height).toFloat(), sunFill, sunStroke)
-                    return
+    private fun createClearSheet(clearableRecentCount: Int, actions: HomeActions, theme: HomeTheme): LinearLayout {
+        return LinearLayout(context).apply {
+            tag = "home-clear-sheet"
+            orientation = LinearLayout.VERTICAL
+            background = rounded(theme.surface, radiusDp = 24, strokeColor = theme.divider)
+            setPadding(dp(20), dp(12), dp(20), dp(20))
+            addView(
+                View(context).apply {
+                    tag = "home-clear-handle"
+                    background = rounded(theme.divider, radiusDp = 2)
+                },
+                LinearLayout.LayoutParams(dp(36), dp(4)).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(14)
                 }
+            )
+            addView(
+                TextView(context).apply {
+                    text = "清空未收藏的记录？"
+                    setTextColor(theme.text)
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                },
+                fullWidthWrapContentParams()
+            )
+            addView(
+                TextView(context).apply {
+                    text = "会移除 $clearableRecentCount 条未收藏记录，以及即阅保存的应用内副本和对应缓存；" +
+                        "已收藏的文件和手机里的原始文件不会被删除。"
+                    setTextColor(theme.muted)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                },
+                spacedParams(top = 8, bottom = 16)
+            )
+            addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(
+                        sheetButton("取消", theme.secondaryAction, theme.text).apply {
+                            tag = "home-clear-cancel"
+                            setOnClickListener { actions.onCancelClearHistory() }
+                        },
+                        weightedActionParams(endMargin = 6)
+                    )
+                    addView(
+                        sheetButton("清空", COLOR_DANGER, Color.WHITE).apply {
+                            tag = "home-clear-confirm"
+                            setOnClickListener { actions.onClearHistory() }
+                        },
+                        weightedActionParams(startMargin = 6)
+                    )
+                },
+                fullWidthWrapContentParams()
+            )
+        }
+    }
 
-                val moonRadius = minOf(width, height) * 0.18f
-                canvas.drawCircle(centerX - moonRadius * 0.12f, centerY, moonRadius, moonFill)
-                canvas.drawCircle(
-                    centerX + moonRadius * 0.42f,
-                    centerY - moonRadius * 0.12f,
-                    moonRadius * 0.84f,
-                    moonCutout
-                )
-            }
+    private fun createThemeButton(actions: HomeActions, theme: HomeTheme): View {
+        return InstantIconView(
+            context = context,
+            icon = if (theme.isDark) InstantIcons.Sun else InstantIcons.Moon,
+            tint = theme.topIcon,
+            iconWidthDp = 18f
+        ).apply {
+            tag = "home-theme-button"
+            contentDescription = if (theme.isDark) "日间模式" else "夜间模式"
+            background = rounded(theme.topIconSurface, radiusDp = 19)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onToggleTheme() }
         }
     }
 
     private fun createSettingsButton(actions: HomeActions, theme: HomeTheme): View {
-        return object : View(context) {
-            private val gearStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = theme.topIcon
-                style = Paint.Style.STROKE
-                strokeWidth = dpFloat(1.35f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-            private val gearPath = Path()
-
-            init {
-                tag = "home-settings-button"
-                contentDescription = "设置"
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { actions.onOpenSettings() }
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val centerX = width / 2f
-                val centerY = height / 2f
-                val size = minOf(width, height).toFloat()
-                val outer = size * 0.19f
-                val shoulder = size * 0.145f
-                val toothHalfAngle = Math.toRadians(9.0)
-                val valleyHalfAngle = Math.toRadians(22.5)
-                gearPath.reset()
-                for (index in 0 until 8) {
-                    val centerAngle = Math.toRadians((-90 + index * 45).toDouble())
-                    val valleyStart = centerAngle - valleyHalfAngle
-                    val toothStart = centerAngle - toothHalfAngle
-                    val toothEnd = centerAngle + toothHalfAngle
-                    val valleyEnd = centerAngle + valleyHalfAngle
-                    if (index == 0) {
-                        gearPath.moveTo(
-                            centerX + kotlin.math.cos(valleyStart).toFloat() * shoulder,
-                            centerY + kotlin.math.sin(valleyStart).toFloat() * shoulder
-                        )
-                    }
-                    gearPath.lineTo(
-                        centerX + kotlin.math.cos(toothStart).toFloat() * outer,
-                        centerY + kotlin.math.sin(toothStart).toFloat() * outer
-                    )
-                    gearPath.lineTo(
-                        centerX + kotlin.math.cos(toothEnd).toFloat() * outer,
-                        centerY + kotlin.math.sin(toothEnd).toFloat() * outer
-                    )
-                    gearPath.lineTo(
-                        centerX + kotlin.math.cos(valleyEnd).toFloat() * shoulder,
-                        centerY + kotlin.math.sin(valleyEnd).toFloat() * shoulder
-                    )
-                }
-                gearPath.close()
-                canvas.drawPath(gearPath, gearStroke)
-                canvas.drawCircle(centerX, centerY, size * 0.075f, gearStroke)
-            }
-        }
-    }
-
-    private fun iconButton(label: String): Button {
-        return Button(context).apply {
-            text = label
-            setAllCaps(false)
-            setTextColor(COLOR_TEXT)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            background = transparentBackground()
-            minHeight = 0
-            minimumHeight = 0
-            minWidth = 0
-            minimumWidth = 0
-            setPadding(0, 0, 0, 0)
-        }
-    }
-
-    private fun drawSunIcon(
-        canvas: Canvas,
-        centerX: Float,
-        centerY: Float,
-        size: Float,
-        sunFill: Paint,
-        sunStroke: Paint
-    ) {
-        val radius = size * 0.105f
-        canvas.drawCircle(centerX, centerY, radius, sunFill)
-        val rayInner = size * 0.18f
-        val rayOuter = size * 0.25f
-        for (index in 0 until 8) {
-            val angle = Math.toRadians((index * 45).toDouble())
-            val startX = centerX + kotlin.math.cos(angle).toFloat() * rayInner
-            val startY = centerY + kotlin.math.sin(angle).toFloat() * rayInner
-            val endX = centerX + kotlin.math.cos(angle).toFloat() * rayOuter
-            val endY = centerY + kotlin.math.sin(angle).toFloat() * rayOuter
-            canvas.drawLine(startX, startY, endX, endY, sunStroke)
+        return InstantIconView(
+            context = context,
+            icon = InstantIcons.Gear,
+            tint = theme.topIcon,
+            iconWidthDp = 19f
+        ).apply {
+            tag = "home-settings-button"
+            contentDescription = "设置"
+            background = rounded(theme.topIconSurface, radiusDp = 19)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { actions.onOpenSettings() }
         }
     }
 
@@ -927,6 +906,10 @@ class HomeViewFactory(
             text = label
             setAllCaps(false)
             minHeight = dp(48)
+            // 自定义圆角背景已经表达层次，平台默认的按下抬升动画会在抽屉边缘留下多余阴影。
+            stateListAnimator = null
+            elevation = 0f
+            translationZ = 0f
             setTextColor(textColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTypeface(typeface, Typeface.BOLD)
@@ -946,15 +929,18 @@ class HomeViewFactory(
         }
     }
 
-    private fun fileTypeIcon(label: String): String {
+    private fun recentMetaLabel(item: RecentFileItem): String {
+        val openedAt = item.lastOpenedAt ?: return item.fileTypeLabel
+        return "${item.fileTypeLabel} · ${recentTimeLabel(openedAt)}"
+    }
+
+    private fun fileTypeIcon(label: String): InstantIcon {
         return when {
-            label.contains("HTML", ignoreCase = true) -> "HTML"
-            label.contains("Markdown", ignoreCase = true) -> "MD"
-            label.contains("MARKDOWN", ignoreCase = true) -> "MD"
-            label.contains("TEXT", ignoreCase = true) -> "TXT"
-            label.contains("TXT", ignoreCase = true) -> "TXT"
-            label.contains("ZIP", ignoreCase = true) -> "ZIP"
-            else -> "FILE"
+            label.contains("HTML", ignoreCase = true) -> InstantIcons.FileHtml
+            label.contains("Markdown", ignoreCase = true) -> InstantIcons.FileMarkdown
+            label.contains("MARKDOWN", ignoreCase = true) -> InstantIcons.FileMarkdown
+            label.contains("ZIP", ignoreCase = true) -> InstantIcons.FileZip
+            else -> InstantIcons.FileText
         }
     }
 
@@ -964,34 +950,36 @@ class HomeViewFactory(
             label.contains("Markdown", ignoreCase = true) -> COLOR_MARKDOWN
             label.contains("MARKDOWN", ignoreCase = true) -> COLOR_MARKDOWN
             label.contains("ZIP", ignoreCase = true) -> COLOR_ZIP
-            label.contains("TEXT", ignoreCase = true) -> COLOR_MUTED
-            else -> COLOR_TEXT
+            else -> COLOR_TXT
         }
     }
 
-    private fun fileTypeSurface(label: String): Int {
+    private fun fileTypeSurface(label: String, theme: HomeTheme): Int {
         return when {
-            label.contains("HTML", ignoreCase = true) -> COLOR_HTML_SURFACE
-            label.contains("Markdown", ignoreCase = true) -> COLOR_MARKDOWN_SURFACE
-            label.contains("MARKDOWN", ignoreCase = true) -> COLOR_MARKDOWN_SURFACE
-            label.contains("ZIP", ignoreCase = true) -> COLOR_ZIP_SURFACE
-            label.contains("TEXT", ignoreCase = true) -> COLOR_MESSAGE_SURFACE
-            else -> COLOR_MESSAGE_SURFACE
+            label.contains("HTML", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_HTML_SURFACE else COLOR_HTML_SURFACE
+            label.contains("Markdown", ignoreCase = true) ||
+                label.contains("MARKDOWN", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_MARKDOWN_SURFACE else COLOR_MARKDOWN_SURFACE
+            label.contains("ZIP", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_ZIP_SURFACE else COLOR_ZIP_SURFACE
+            else ->
+                if (theme.isDark) COLOR_DARK_TXT_SURFACE else COLOR_TXT_SURFACE
         }
     }
 
-    private fun fileTypeStroke(label: String): Int {
+    private fun fileTypeStroke(label: String, theme: HomeTheme): Int {
         return when {
-            label.contains("HTML", ignoreCase = true) -> COLOR_HTML_STROKE
-            label.contains("Markdown", ignoreCase = true) -> COLOR_MARKDOWN_STROKE
-            label.contains("MARKDOWN", ignoreCase = true) -> COLOR_MARKDOWN_STROKE
-            label.contains("ZIP", ignoreCase = true) -> COLOR_ZIP_STROKE
-            else -> COLOR_DIVIDER
+            label.contains("HTML", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_HTML_STROKE else COLOR_HTML_STROKE
+            label.contains("Markdown", ignoreCase = true) ||
+                label.contains("MARKDOWN", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_MARKDOWN_STROKE else COLOR_MARKDOWN_STROKE
+            label.contains("ZIP", ignoreCase = true) ->
+                if (theme.isDark) COLOR_DARK_ZIP_STROKE else COLOR_ZIP_STROKE
+            else ->
+                if (theme.isDark) COLOR_DARK_TXT_STROKE else COLOR_TXT_STROKE
         }
-    }
-
-    private fun transparentBackground(): GradientDrawable {
-        return rounded(Color.TRANSPARENT, radiusDp = 12)
     }
 
     private fun centeredPhoneParams(): FrameLayout.LayoutParams {
@@ -1039,6 +1027,13 @@ class HomeViewFactory(
 
     private fun iconButtonParams(start: Int = 0): LinearLayout.LayoutParams {
         return LinearLayout.LayoutParams(dp(34), dp(44)).apply {
+            leftMargin = dp(start)
+        }
+    }
+
+    // 顶部栏按钮按原型做 38dp 圆形，列表行按钮仍用 34x44 的触控区域。
+    private fun appBarIconButtonParams(start: Int = 0): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(dp(38), dp(38)).apply {
             leftMargin = dp(start)
         }
     }
@@ -1122,10 +1117,6 @@ class HomeViewFactory(
         return (value * context.resources.displayMetrics.density).toInt()
     }
 
-    private fun dpFloat(value: Float): Float {
-        return value * context.resources.displayMetrics.density
-    }
-
     private data class HomeTheme(
         val isDark: Boolean,
         val appBackground: Int,
@@ -1141,7 +1132,8 @@ class HomeViewFactory(
         val iconTile: Int,
         val privacy: Int,
         val privacySurface: Int,
-        val favoriteIcon: Int,
+        val favoriteOn: Int,
+        val deleteIcon: Int,
         val primaryActionBackground: Int,
         val primaryActionText: Int,
         val secondaryAction: Int
@@ -1164,7 +1156,8 @@ class HomeViewFactory(
                         iconTile = COLOR_DARK_ICON_TILE,
                         privacy = COLOR_PRIVACY,
                         privacySurface = COLOR_DARK_PRIVACY_SURFACE,
-                        favoriteIcon = COLOR_DARK_FAVORITE_ICON,
+                        favoriteOn = COLOR_FAVORITE_ON,
+                        deleteIcon = COLOR_DELETE_ICON,
                         primaryActionBackground = Color.WHITE,
                         primaryActionText = COLOR_TEXT,
                         secondaryAction = COLOR_DARK_ACTION
@@ -1185,7 +1178,8 @@ class HomeViewFactory(
                         iconTile = COLOR_ICON_TILE,
                         privacy = COLOR_PRIVACY,
                         privacySurface = COLOR_PRIVACY_SURFACE,
-                        favoriteIcon = COLOR_FAVORITE_ICON,
+                        favoriteOn = COLOR_FAVORITE_ON,
+                        deleteIcon = COLOR_DELETE_ICON,
                         primaryActionBackground = COLOR_TEXT,
                         primaryActionText = Color.WHITE,
                         secondaryAction = COLOR_ACTION
@@ -1200,7 +1194,6 @@ class HomeViewFactory(
         val COLOR_SURFACE: Int = Color.WHITE
         val COLOR_TEXT: Int = Color.rgb(15, 23, 42)
         val COLOR_MUTED: Int = Color.rgb(100, 116, 139)
-        val COLOR_CTA_SECONDARY: Int = Color.rgb(203, 213, 225)
         val COLOR_DIVIDER: Int = Color.rgb(226, 232, 240)
         val COLOR_ACTION: Int = Color.rgb(241, 245, 249)
         val COLOR_TOP_ICON: Int = Color.rgb(142, 162, 194)
@@ -1212,7 +1205,7 @@ class HomeViewFactory(
         val COLOR_PRIVACY: Int = Color.rgb(5, 150, 105)
         val COLOR_PRIVACY_SURFACE: Int = Color.rgb(236, 253, 245)
         val COLOR_DANGER: Int = Color.rgb(220, 38, 38)
-        val COLOR_FAVORITE_ICON: Int = Color.rgb(196, 210, 229)
+        val COLOR_FAVORITE_ON: Int = Color.rgb(37, 99, 235)
         val COLOR_DELETE_ICON: Int = Color.rgb(255, 90, 103)
         val COLOR_HTML: Int = Color.rgb(234, 88, 12)
         val COLOR_HTML_SURFACE: Int = Color.rgb(255, 247, 237)
@@ -1223,6 +1216,9 @@ class HomeViewFactory(
         val COLOR_ZIP: Int = Color.rgb(217, 119, 6)
         val COLOR_ZIP_SURFACE: Int = Color.rgb(255, 251, 235)
         val COLOR_ZIP_STROKE: Int = Color.rgb(253, 230, 138)
+        val COLOR_TXT: Int = Color.rgb(100, 116, 139)
+        val COLOR_TXT_SURFACE: Int = Color.rgb(248, 250, 252)
+        val COLOR_TXT_STROKE: Int = Color.rgb(226, 232, 240)
         val COLOR_DARK_BACKGROUND: Int = Color.rgb(12, 12, 14)
         val COLOR_DARK_SURFACE: Int = Color.rgb(28, 28, 29)
         val COLOR_DARK_TEXT: Int = Color.rgb(244, 247, 251)
@@ -1235,7 +1231,13 @@ class HomeViewFactory(
         val COLOR_DARK_SEARCH_HIGHLIGHT: Int = Color.rgb(72, 58, 28)
         val COLOR_DARK_ICON_TILE: Int = Color.rgb(30, 36, 47)
         val COLOR_DARK_PRIVACY_SURFACE: Int = Color.rgb(12, 71, 57)
-        val COLOR_DARK_FAVORITE_ICON: Int = Color.rgb(219, 231, 246)
-        val COLOR_SUN_ICON: Int = Color.rgb(250, 204, 21)
+        val COLOR_DARK_HTML_SURFACE: Int = Color.rgb(44, 30, 20)
+        val COLOR_DARK_HTML_STROKE: Int = Color.rgb(122, 67, 24)
+        val COLOR_DARK_MARKDOWN_SURFACE: Int = Color.rgb(22, 35, 60)
+        val COLOR_DARK_MARKDOWN_STROKE: Int = Color.rgb(47, 76, 126)
+        val COLOR_DARK_ZIP_SURFACE: Int = Color.rgb(44, 36, 19)
+        val COLOR_DARK_ZIP_STROKE: Int = Color.rgb(107, 84, 23)
+        val COLOR_DARK_TXT_SURFACE: Int = Color.rgb(30, 36, 47)
+        val COLOR_DARK_TXT_STROKE: Int = Color.rgb(43, 49, 61)
     }
 }

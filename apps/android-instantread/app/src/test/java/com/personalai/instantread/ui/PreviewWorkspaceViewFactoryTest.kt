@@ -126,7 +126,7 @@ class PreviewWorkspaceViewFactoryTest {
         assertFalse(text.contains("外部链接将交给系统浏览器打开"))
 
         assertEquals(dp(59), view.viewWithTag("preview-app-bar").layoutParams.height)
-        assertEquals(dp(30), view.viewWithTag("preview-policy-bar").layoutParams.height)
+        assertEquals(dp(34), view.viewWithTag("preview-policy-bar").layoutParams.height)
         assertTrue(view.viewWithTag("preview-back-button").isClickable)
         assertTrue(view.viewWithTag("preview-favorite-button").isClickable)
         assertFalse(view.hasTaggedView("preview-theme-button"))
@@ -302,6 +302,38 @@ class PreviewWorkspaceViewFactoryTest {
         text.viewWithTag("preview-search-button").performClick()
 
         assertEquals(listOf("open"), clicks)
+    }
+
+    @Test
+    fun openSearchCanBeClosedFromTheTopBarSearchButton() {
+        val context = RuntimeEnvironment.getApplication()
+        val events = mutableListOf<String>()
+
+        val view = PreviewWorkspaceViewFactory(context).create(
+            state = PreviewWorkspaceState(
+                title = "notes.md",
+                fileTypeLabel = "MARKDOWN",
+                isFavorite = false,
+                isDarkTheme = false,
+                javaScriptStatus = "JS 不执行",
+                navigationStatus = "本地阅读模式",
+                supportsSearch = true,
+                searchState = PreviewSearchState(isOpen = true)
+            ),
+            contentView = TextView(context),
+            actions = PreviewWorkspaceActions(
+                onBack = {},
+                onToggleFavorite = {},
+                onSearchOpened = { events += "open" },
+                onSearchClosed = { events += "close" }
+            )
+        )
+
+        val searchButton = view.viewWithTag("preview-search-button")
+        assertEquals("关闭搜索", searchButton.contentDescription)
+        searchButton.performClick()
+
+        assertEquals(listOf("close"), events)
     }
 
     @Test
@@ -779,19 +811,23 @@ class PreviewWorkspaceViewFactoryTest {
     }
 
     @Test
-    fun workspaceFavoriteIconUsesSolidFillWhenFavorited() {
+    fun workspaceFavoriteIconUsesPrototypeStarVector() {
         val source = java.io.File("src/main/java/com/personalai/instantread/ui/PreviewWorkspaceViewFactory.kt").readText()
         val favoriteButtonSource = source
             .substringAfter("private fun favoriteButton")
             .substringBefore("private fun divider")
+        val filledStarVector =
+            java.io.File("src/main/res/drawable/ic_instantread_star_filled.xml").readText()
 
-        assertFalse(
-            "Favorited preview star should not use a translucent fill.",
-            favoriteButtonSource.contains("alpha = if (state.isFavorite) 64")
+        assertTrue(
+            "Preview favorite action should reuse the shared prototype star vector.",
+            favoriteButtonSource.contains("InstantIcons.Star") &&
+                favoriteButtonSource.contains("active = state.isFavorite") &&
+                favoriteButtonSource.contains("activeTint = colors(state).favoriteOn")
         )
         assertTrue(
-            "Favorited preview star should fill with the same color family as the outline.",
-            favoriteButtonSource.contains("starFill.alpha = if (state.isFavorite) 255 else 0")
+            "Favorited preview star should switch to the filled vector instead of a translucent fill.",
+            filledStarVector.contains("android:fillColor=\"#000000\"")
         )
     }
 

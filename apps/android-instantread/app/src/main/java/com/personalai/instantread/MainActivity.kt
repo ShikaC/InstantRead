@@ -12,7 +12,6 @@ import com.personalai.instantread.settings.PreviewSettingsRepository
 import com.personalai.instantread.tasks.*
 import com.personalai.instantread.ui.*
 import java.io.File
-
 class MainActivity : Activity() {
     private lateinit var previewController: PreviewController
     private lateinit var foregroundFileTaskController: ForegroundFileTaskController
@@ -24,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var homeViewFactory: HomeViewFactory
     private lateinit var settingsViewFactory: SettingsViewFactory
     private lateinit var zipCacheSettingsController: ZipCacheSettingsController
+    private lateinit var recentHistoryClearController: RecentHistoryClearController
     private lateinit var foregroundTaskViewFactory: ForegroundTaskViewFactory
     private lateinit var previewWebViewFactory: PreviewWebViewFactory
     private lateinit var previewWorkspaceViewFactory: PreviewWorkspaceViewFactory
@@ -34,11 +34,10 @@ class MainActivity : Activity() {
     private lateinit var previewReadingDisplayController: PreviewReadingDisplayController
     private lateinit var previewScriptAuthorizationController: PreviewScriptAuthorizationController
     private lateinit var previewActionsController: PreviewWorkspaceActionsController
-    private var isShowingPreview = false
-    private var isShowingSettings = false
-    private var isShowingTask = false
+    private var isShowingPreview = false; private var isShowingSettings = false
+    private var isShowingTask = false; private var currentPreviewHistoryId: String? = null
     private var restoreHomeAfterStoppedTask = false
-    private var pendingDeleteHistoryId: String? = null
+    private var pendingDeleteHistoryId: String? = null; private var pendingClearHistory = false
     private var homeListFilter = HomeListFilter.ALL
     private var homeSearchQuery = ""
     private var previewDocumentMode = PreviewDocumentMode.READING
@@ -65,6 +64,7 @@ class MainActivity : Activity() {
         homeViewFactory = HomeViewFactory(this)
         settingsViewFactory = SettingsViewFactory(this)
         zipCacheSettingsController = ZipCacheSettingsController(foregroundFileTaskController, cacheDir)
+        recentHistoryClearController = RecentHistoryClearController(historyRepository, filesDir, cacheDir)
         foregroundTaskViewFactory = ForegroundTaskViewFactory(this)
         previewWorkspaceViewFactory = PreviewWorkspaceViewFactory(this)
         previewSearchController = PreviewSearchController { refreshPreviewChrome(it) }
@@ -75,16 +75,13 @@ class MainActivity : Activity() {
         previewActionsController = PreviewWorkspaceActionsController(settingsRepository, previewSearchController, previewReadingDisplayController, previewScriptAuthorizationController, { renderHome() }, ::togglePreviewFavorite, ::switchPreviewDocumentMode)
         previewChromeController = PreviewChromeController(previewWorkspaceViewFactory, previewActionsController::actions, ::previewState)
         previewWebViewFactory = PreviewWebViewFactory(this, ::openExternalUrl)
-        ImportCleanup.scheduleDetachedCleanup(filesDir, cacheDir, historyRepository.listRecent().mapTo(mutableSetOf()) { it.id }); renderHome()
-        if (savedInstanceState == null) handleIncomingIntent(intent)
+        ImportCleanup.scheduleDetachedCleanup(filesDir, cacheDir, historyRepository.listRecent().mapTo(mutableSetOf()) { it.id }); renderHome(); restoreScreenState(savedInstanceState); if (savedInstanceState == null) handleIncomingIntent(intent)
     }
+    override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); MainScreenState.capture(isShowingPreview, isShowingSettings, isShowingTask, currentPreviewHistoryId, previewDocumentMode, homeListFilter, homeSearchQuery).writeTo(outState) }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); restoreHomeAfterStoppedTask = false; renderHome(); handleIncomingIntent(intent) }
     override fun onPause() { previewScrollPositionController.saveCurrent(); super.onPause() }
     override fun onStop() {
-        if (isShowingTask) {
-            isShowingTask = false
-            restoreHomeAfterStoppedTask = true
-        }
+        if (isShowingTask) { isShowingTask = false; restoreHomeAfterStoppedTask = true }
         previewReadingDisplayController.cancelPending()
         cancelPreviewTaskPresentation()
         foregroundFileTaskController.cancelCurrent()
@@ -102,7 +99,7 @@ class MainActivity : Activity() {
     private fun renderHome(message: String? = null) {
         cancelPreviewTaskPresentation(); foregroundFileTaskController.cancelCurrent()
         previewScrollPositionController.saveCurrent()
-        isShowingPreview = false; isShowingSettings = false; isShowingTask = false
+        isShowingPreview = false; isShowingSettings = false; isShowingTask = false; currentPreviewHistoryId = null
         previewChromeController.clear(); previewSearchController.clear(); previewScrollPositionController.clear(); previewPageReadyController.clear(); previewReadingDisplayController.clear()
         val settings = settingsRepository.getSettings()
         val allRecentFiles = historyRepository.listRecent().map { it.toRecentFileItem() }
@@ -115,6 +112,7 @@ class MainActivity : Activity() {
             searchQuery = homeSearchQuery,
             totalRecentCount = allRecentFiles.size,
             favoriteRecentCount = allRecentFiles.count { it.isFavorite },
+            clearableRecentCount = allRecentFiles.count { !it.isFavorite },
             actions = HomeActions(
                 onChooseFile = ::openDocumentPicker,
                 onOpenSettings = { renderSettings() },
@@ -122,30 +120,34 @@ class MainActivity : Activity() {
                 onOpenHistory = ::reopenPreview,
                 onToggleFavorite = { id -> historyRepository.toggleFavorite(id); pendingDeleteHistoryId = null; renderHome() },
                 onDeleteHistory = { id ->
+                    pendingClearHistory = false
                     if (pendingDeleteHistoryId == id) deleteHistory(id) else {
                         pendingDeleteHistoryId = id
                         renderHome()
                     }
                 },
                 onCancelDelete = { pendingDeleteHistoryId = null; renderHome() },
+                onClearHistory = { if (pendingClearHistory) clearRecentHistory() else { pendingClearHistory = true; pendingDeleteHistoryId = null; renderHome() } },
+                onCancelClearHistory = { pendingClearHistory = false; renderHome() },
                 onToggleTheme = { settingsRepository.setDarkTheme(!settings.isDarkTheme); renderHome() },
                 onFilterChanged = { filter -> homeListFilter = filter; pendingDeleteHistoryId = null; renderHome() },
                 onSearchQueryChanged = { query -> homeSearchQuery = query; pendingDeleteHistoryId = null; renderHome() }
             ),
-            pendingDeleteFile = pendingDeleteFile
+            pendingDeleteFile = pendingDeleteFile,
+            pendingClearHistory = pendingClearHistory
         ))
     }
     private fun renderSettings(message: String? = null) {
-        foregroundFileTaskController.cancelCurrent()
-        previewScrollPositionController.saveCurrent()
-        isShowingPreview = false; isShowingSettings = true; isShowingTask = false
+        foregroundFileTaskController.cancelCurrent(); previewScrollPositionController.saveCurrent()
+        isShowingPreview = false; isShowingSettings = true; isShowingTask = false; currentPreviewHistoryId = null
         previewChromeController.clear(); previewSearchController.clear(); previewScrollPositionController.clear(); previewPageReadyController.clear(); previewReadingDisplayController.clear()
         val settings = settingsRepository.getSettings()
         setContentView(settingsViewFactory.create(
             state = SettingsViewState(
                 message = message,
                 zipCacheSummary = "正在统计",
-                readingComfort = settings.readingComfort
+                readingComfort = settings.readingComfort,
+                isDarkTheme = settings.isDarkTheme
             ),
             actions = SettingsActions(
                 onReadingComfortChanged = { comfort -> settingsRepository.setReadingComfort(comfort); renderSettings() },
@@ -168,7 +170,7 @@ class MainActivity : Activity() {
         }
     }
     private fun showWebView(history: PreviewHistory, javaScriptEnabled: Boolean, resourceRoot: File?, supportsUserScriptAuthorization: Boolean, load: (android.webkit.WebView) -> Unit) {
-        isShowingPreview = true; isShowingSettings = false; isShowingTask = false
+        isShowingPreview = true; isShowingSettings = false; isShowingTask = false; currentPreviewHistoryId = history.id
         previewJavaScriptEnabled = javaScriptEnabled
         previewSupportsUserScriptAuthorization = supportsUserScriptAuthorization
         val pageLoad = previewPageReadyController.beginLoad(history.id)
@@ -197,18 +199,21 @@ class MainActivity : Activity() {
     private fun openDocumentPicker() = startActivityForResult(
         Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }, REQUEST_OPEN_DOCUMENT
     )
+    private fun restoreScreenState(savedInstanceState: Bundle?) {
+        val state = MainScreenState.restore(savedInstanceState); homeListFilter = state.homeListFilter; homeSearchQuery = state.homeSearchQuery; state.restoreScreen(::renderSettings) { id, mode -> historyRepository.findById(id)?.let { openPreview(it, mode) } ?: renderHome("记录不存在或已删除。") }
+    }
     private fun handleIncomingIntent(intent: Intent?) {
         IncomingIntentUriResolver.resolve(intent)?.let { incoming ->
             importUri(incoming.uri, incoming.sourceKind, incoming.mimeType, incoming.entryAction, incoming.entryUriSource)
         }
     }
     private fun importUri(uri: Uri, sourceKind: SourceKind, intentMimeType: String? = null, entryAction: String? = null, entryUriSource: String? = null) {
-        foregroundFileTaskController.cancelCurrent(); isShowingPreview = false; isShowingSettings = false; isShowingTask = true
+        foregroundFileTaskController.cancelCurrent(); isShowingPreview = false; isShowingSettings = false; isShowingTask = true; currentPreviewHistoryId = null
         importWorkflowController.start(
             ImportWorkflowInput(uri, sourceKind, intentMimeType, entryAction, entryUriSource),
             onProgress = ::renderForegroundTask,
             onSuccess = { imported ->
-                val history = historyRepository.upsertImported(imported)
+                val history = historyRepository.upsertImported(imported.withUniqueDisplayName(historyRepository.listRecent().map { it.displayName }))
                 homeListFilter = HomeListFilter.ALL; homeSearchQuery = ""
                 openPreview(history)
             },
@@ -220,7 +225,7 @@ class MainActivity : Activity() {
     private fun openPreview(history: PreviewHistory, mode: PreviewDocumentMode = PreviewDocumentMode.READING) {
         previewReadingDisplayController.abandonPending()
         cancelPreviewTaskPresentation(); foregroundFileTaskController.cancelCurrent()
-        isShowingPreview = false; isShowingSettings = false; isShowingTask = false
+        isShowingPreview = false; isShowingSettings = false; isShowingTask = false; currentPreviewHistoryId = history.id
         previewDocumentMode = mode
         if (history.fileType == FileType.HTML) showPreview(history, previewController.preview(history.toImportedFile(), currentPreviewOptions(history)))
         else {
@@ -251,11 +256,7 @@ class MainActivity : Activity() {
     }
     private fun renderForegroundTask(state: ForegroundTaskState) {
         isShowingPreview = false; isShowingSettings = false; isShowingTask = true
-        setContentView(
-            foregroundTaskViewFactory.create(state, settingsRepository.getSettings().isDarkTheme) {
-                foregroundFileTaskController.cancelCurrent(); renderHome()
-            }
-        )
+        setContentView(foregroundTaskViewFactory.create(state, settingsRepository.getSettings().isDarkTheme) { foregroundFileTaskController.cancelCurrent(); renderHome() })
     }
     private fun refreshPreviewChrome(id: String): Boolean =
         historyRepository.findById(id)?.let { previewChromeController.refresh(id, it) } ?: false
@@ -283,6 +284,7 @@ class MainActivity : Activity() {
         val cleanupScheduled = runCatching { ImportCleanup.deleteImportAndCache(deleted.id, filesDir, cacheDir) }.isSuccess
         renderHome(ImportCleanupCopy.deletedMessage(deleted.displayTitle(), cleanupScheduled))
     }
+    private fun clearRecentHistory() { pendingClearHistory = false; renderHome(RecentHistoryClearCopy.clearedMessage(recentHistoryClearController.clearNotFavorite())) }
     private fun openExternalUrl(url: String) = try {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (_: ActivityNotFoundException) {

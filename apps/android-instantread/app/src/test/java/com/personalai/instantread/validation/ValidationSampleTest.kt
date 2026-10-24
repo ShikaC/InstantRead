@@ -42,6 +42,19 @@ class ValidationSampleTest {
     }
 
     @Test
+    fun committedChineseNamedSampleIsDetectedAndPreviewable() {
+        val sample = File(validationSampleRoot(), "中文 文件名 样例.html")
+
+        assertTrue("The Chinese-named fixture should stay in the sample set.", sample.isFile)
+        assertEquals(FileType.HTML, FileTypeDetector.detect(sample.name, "text/html"))
+
+        val preview = PreviewController().preview(imported(sample, "committed-cn-sample", FileType.HTML))
+
+        val webFile = preview as PreviewModel.WebFile
+        assertTrue(webFile.file.readText(Charsets.UTF_8).contains("中文文件名样例"))
+    }
+
+    @Test
     fun committedHtmlSampleUsesCompactReferencePreviewContent() {
         val sample = File(validationSampleRoot(), "sample.html")
 

@@ -118,7 +118,7 @@ class PreviewHistoryRepositoryTest {
     }
 
     @Test
-    fun listRecentOrdersFavoritesFirstThenLastOpened() {
+    fun listRecentOrdersByLastOpenedWithoutPinningFavorites() {
         now = 1_000L
         repository.upsertImported(importedFile(id = "old", displayName = "Old.txt", fileType = FileType.TEXT))
         now = 2_000L
@@ -129,7 +129,20 @@ class PreviewHistoryRepositoryTest {
 
         val recentIds = repository.listRecent().map { it.id }
 
-        assertEquals(listOf("favorite", "new", "old"), recentIds)
+        assertEquals(listOf("new", "favorite", "old"), recentIds)
+    }
+
+    @Test
+    fun listRecentMovesReopenedRecordsToTheTop() {
+        now = 1_000L
+        repository.upsertImported(importedFile(id = "first", displayName = "First.html"))
+        now = 2_000L
+        repository.upsertImported(importedFile(id = "second", displayName = "Second.html"))
+
+        now = 3_000L
+        repository.markOpened("first")
+
+        assertEquals(listOf("first", "second"), repository.listRecent().map { it.id })
     }
 
     @Test

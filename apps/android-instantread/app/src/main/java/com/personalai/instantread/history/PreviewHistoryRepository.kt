@@ -43,7 +43,7 @@ class PreviewHistoryRepository(
             null,
             null,
             null,
-            "favorite DESC, last_opened_at DESC"
+            "last_opened_at DESC"
         )
         return cursor.use { it.readAll() }
     }

@@ -18,6 +18,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.zip.CRC32
+import java.util.zip.ZipException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -273,6 +274,20 @@ class SafeZipExtractorTest {
         assertEquals(5, cancellationChecks)
         assertEquals(bufferSize.toLong(), File(target, "payload.bin").length())
         assertArrayEquals(payload.copyOf(bufferSize), File(target, "payload.bin").readBytes())
+    }
+
+    @Test
+    fun rejectsBytesWithoutZipCentralDirectoryBeforeCreatingTarget() {
+        val corrupt = temp.newFile("corrupt.zip").apply {
+            writeBytes(ByteArray(4096) { index -> (index * 31).toByte() })
+        }
+        val target = File(temp.root, "not-created")
+
+        assertThrows<ZipException> {
+            SafeZipExtractor.extract(corrupt, target)
+        }
+
+        assertFalse(target.exists())
     }
 
     private fun zipFile(vararg entries: Pair<String, ByteArray>): File {

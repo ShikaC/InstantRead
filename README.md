@@ -35,9 +35,9 @@
 
 ## 验证状态
 
-- debug / release 两个变体分别通过 52 个 test suites、519 项测试，0 failures、0 errors、0 skipped（2026-10-19 基线）。
-- debug APK 已完成 Android 真机安装与人工验收。
-- 当前定位为个人稳定版；尚未生成生产签名 Release APK，也未宣称应用商店发布。
+- 首个稳定版 `0.1.0`（`versionCode=2`）已完成生产签名构建与真机覆盖升级验证：debug / release 两个变体分别通过 58 个 test suites、556 项测试，0 failures、0 errors、0 skipped（2026-10-23 发布候选基线）。
+- 已在真机上完成四格式与中文编码、来源入口、脚本授权、异常 ZIP、旋转与同签名覆盖升级验收。
+- 通过 GitHub Releases 分发签名 APK；未上架任何应用商店。
 
 ## 构建
 
@@ -56,7 +56,13 @@ apps/android-instantread/app/build/outputs/apk/debug/app-debug.apk
 
 ## 安装
 
-当前尚未提供签名安装包，也没有上架任何应用商店。首发将通过 GitHub Releases 提供签名 APK、校验值与安装说明；在 Release 出现之前，请按上一节自行构建 debug APK。
+首个稳定版 `0.1.0` 通过 [GitHub Releases](https://github.com/ShikaC/InstantRead/releases) 分发，提供已签名的 APK、SHA-256 校验值与安装说明。
+
+- 下载 `instantread-0.1.0-release.apk`，在手机上允许「安装未知来源应用」后点开安装。
+- App 不申请网络权限，文件只在本机解析。
+- 后续版本使用同一签名密钥，直接覆盖安装即可，最近记录与收藏会保留。
+
+想自行构建请见上一节。
 
 ## 反馈与安全
 

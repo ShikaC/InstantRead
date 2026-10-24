@@ -9,6 +9,8 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.io.RandomAccessFile
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
 class ZipSlipException(entryName: String) : SecurityException("Unsafe ZIP entry: $entryName")
@@ -26,6 +28,7 @@ object SafeZipExtractor {
         policy: ImportResourcePolicy = ImportResourcePolicy.DEFAULT,
         cancellationToken: FileTaskCancellationToken = FileTaskCancellationToken.NONE
     ): ZipExtractionStats {
+        requireEndOfCentralDirectory(zipFile)
         val canonicalTarget = targetDirectory.canonicalFile
         ensureDirectory(canonicalTarget)
 
@@ -87,6 +90,44 @@ object SafeZipExtractor {
             fileCount = fileCount,
             expandedBytes = expandedBytes
         )
+    }
+
+    /**
+     * ZipInputStream 会把没有 ZIP 结构的随机数据误判成空包。
+     * 先用固定大小尾部窗口确认中央目录结束记录存在，避免把损坏文件提示成“没有网页入口”。
+     */
+    private fun requireEndOfCentralDirectory(zipFile: File) {
+        val fileLength = zipFile.length()
+        if (fileLength < END_OF_CENTRAL_DIRECTORY_SIZE) {
+            throw ZipException("ZIP end of central directory is missing")
+        }
+        RandomAccessFile(zipFile, "r").use { archive ->
+            val tailSize = minOf(fileLength, MAX_END_OF_CENTRAL_DIRECTORY_SEARCH_BYTES.toLong()).toInt()
+            val tail = ByteArray(tailSize)
+            archive.seek(fileLength - tailSize)
+            archive.readFully(tail)
+            if (!tail.hasEndOfCentralDirectoryRecord()) {
+                throw ZipException("ZIP end of central directory is missing")
+            }
+        }
+    }
+
+    private fun ByteArray.hasEndOfCentralDirectoryRecord(): Boolean {
+        for (index in size - END_OF_CENTRAL_DIRECTORY_SIZE downTo 0) {
+            if (this[index] != END_SIGNATURE_0 ||
+                this[index + 1] != END_SIGNATURE_1 ||
+                this[index + 2] != END_SIGNATURE_2 ||
+                this[index + 3] != END_SIGNATURE_3
+            ) {
+                continue
+            }
+            val commentLength = (this[index + 20].toInt() and 0xff) or
+                ((this[index + 21].toInt() and 0xff) shl 8)
+            if (index + END_OF_CENTRAL_DIRECTORY_SIZE + commentLength == size) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun consumeEntryPayload(
@@ -162,4 +203,10 @@ object SafeZipExtractor {
     }
 
     private const val BUFFER_SIZE = 16 * 1024
+    private const val END_OF_CENTRAL_DIRECTORY_SIZE = 22
+    private const val MAX_END_OF_CENTRAL_DIRECTORY_SEARCH_BYTES = 65_557
+    private const val END_SIGNATURE_0 = 0x50.toByte()
+    private const val END_SIGNATURE_1 = 0x4b.toByte()
+    private const val END_SIGNATURE_2 = 0x05.toByte()
+    private const val END_SIGNATURE_3 = 0x06.toByte()
 }
